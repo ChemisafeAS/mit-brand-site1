@@ -11,10 +11,10 @@ export default function RootLayout({
       <body>
         <div
           style={{
-            maxWidth: "900px",
+            maxWidth: "1120px",
             margin: "0 auto",
-            padding: "30px 20px",
-            fontFamily: "Arial, sans-serif",
+            padding: "20px",
+            fontFamily: "Arial, Helvetica, sans-serif",
           }}
         >
           <Nav />
