@@ -49,7 +49,7 @@ export default function RootLayout({
                 <h3 style={{ marginBottom: "10px" }}>Chemisafe A/S</h3>
 
                 <p style={{ lineHeight: "1.7" }}>
-                  H P Christensens Vej 1.
+                  H P Christensens Vej 1
                   <br />
                   3000 Helsingør
                 </p>
