@@ -4,7 +4,7 @@ export default function Home() {
   return (
     <main>
       <h1 style={{ fontSize: "48px", marginBottom: "20px" }}>
-        Velkommen til min hjemmeside
+        Velkommen til Chemisafes hjemmeside
       </h1>
 
       <p style={{ fontSize: "20px", lineHeight: "1.6", marginBottom: "20px" }}>
