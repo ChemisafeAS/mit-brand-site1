@@ -6,22 +6,24 @@ export default function Nav() {
     <nav
       style={{
         position: "sticky",
-        top: "16px",
+        top: 0,
         zIndex: 1000,
-        marginBottom: "32px",
+        width: "100%",
+        background:
+          "linear-gradient(90deg, rgba(15,23,42,0.96) 0%, rgba(30,41,59,0.92) 100%)",
+        backdropFilter: "blur(8px)",
       }}
     >
       <div
         style={{
+          maxWidth: "1440px",
+          margin: "0 auto",
+          padding: "18px 32px",
           display: "flex",
-          justifyContent: "space-between",
           alignItems: "center",
-          gap: "20px",
-          padding: "16px 20px",
-          backgroundColor: "#0f172a",
+          justifyContent: "space-between",
+          gap: "24px",
           color: "white",
-          borderRadius: "18px",
-          boxShadow: "0 10px 30px rgba(15, 23, 42, 0.18)",
           flexWrap: "wrap",
         }}
       >
@@ -31,23 +33,16 @@ export default function Nav() {
             display: "flex",
             alignItems: "center",
             gap: "12px",
+            fontSize: "28px",
             fontWeight: "bold",
-            fontSize: "20px",
           }}
         >
           <Image
             src="/logo.png"
             alt="Chemisafe A/S logo"
-            width={46}
-            height={46}
-            style={{
-              width: "46px",
-              height: "46px",
-              objectFit: "contain",
-              borderRadius: "10px",
-              backgroundColor: "white",
-              padding: "4px",
-            }}
+            width={52}
+            height={52}
+            style={{ width: "52px", height: "52px", objectFit: "contain" }}
           />
           <span>Chemisafe A/S</span>
         </Link>
@@ -55,14 +50,26 @@ export default function Nav() {
         <div
           style={{
             display: "flex",
-            gap: "20px",
+            alignItems: "center",
+            gap: "28px",
             flexWrap: "wrap",
-            fontSize: "15px",
+            fontSize: "18px",
           }}
         >
           <Link href="/">Forside</Link>
           <Link href="/om">Om</Link>
           <Link href="/kontakt">Kontakt</Link>
+          <a
+            href="mailto:ordre@chemisafe.dk"
+            style={{
+              padding: "12px 18px",
+              backgroundColor: "#0ea5e9",
+              borderRadius: "999px",
+              fontWeight: "bold",
+            }}
+          >
+            Få tilbud
+          </a>
         </div>
       </div>
     </nav>
