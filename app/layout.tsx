@@ -1,5 +1,12 @@
+import type { Metadata } from "next";
 import "./globals.css";
 import Nav from "@/components/Nav";
+
+export const metadata: Metadata = {
+  title: "CHEMISAFE AS – Professionelt salt og afisningsprodukter",
+  description:
+    "Stort sortiment af salt og afisningsprodukter til erhverv – vejsalt, fodersalt, blødgøringstabletter, urea, MgCl2 og meget mere. Hurtig levering – få et tilbud i dag.",
+};
 
 export default function RootLayout({
   children,

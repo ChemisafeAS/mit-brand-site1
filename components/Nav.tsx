@@ -57,6 +57,7 @@ export default function Nav() {
           }}
         >
           <Link href="/">Forside</Link>
+          <Link href="/produkter">Produkter</Link>
           <Link href="/om">Om</Link>
           <Link href="/kontakt">Kontakt</Link>
           <a
