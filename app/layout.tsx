@@ -7,8 +7,11 @@ export const metadata: Metadata = {
   description:
     "Stort sortiment af salt og afisningsprodukter til erhverv – vejsalt, fodersalt, blødgøringstabletter, urea, MgCl2 og meget mere. Hurtig levering – få et tilbud i dag.",
   icons: {
-    icon: "/icon.png",
-    shortcut: "/icon.png",
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.png", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
     apple: "/apple-icon.png",
   },
 };
