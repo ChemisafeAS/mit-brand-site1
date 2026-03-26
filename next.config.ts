@@ -12,6 +12,27 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        source: "/download/:path*",
+        headers: [
+          {
+            key: "X-Robots-Tag",
+            value: "noindex, nofollow, noimageindex, nosnippet",
+          },
+          {
+            key: "Content-Disposition",
+            value: "attachment",
+          },
+        ],
+      },
+    ];
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/download/:path*",
+        destination: "/ekatalog/:path*",
+      },
     ];
   },
 };
