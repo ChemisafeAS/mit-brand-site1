@@ -32,7 +32,6 @@ export default function RootLayout({
           style={{
             background: "#0f172a",
             color: "white",
-            marginTop: "80px",
             padding: "60px 40px",
           }}
         >
@@ -49,7 +48,7 @@ export default function RootLayout({
                 color: "#38bdf8",
               }}
             >
-              Contact info
+              Kontakt info
             </h2>
 
             <div

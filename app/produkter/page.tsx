@@ -1,59 +1,107 @@
+"use client";
+
+import { useState } from "react";
+
 const products = [
   {
-    name: "Pingo vejsalt 25 kg. Sæk",
+    name: "Pingo vejsalt - 25 kg sæk",
     saltType: "Vejsalt",
   },
   {
-    name: "Pingo vejsalt 15 kg. Sæk",
+    name: "Pingo vejsalt - 15 kg sæk",
     saltType: "Vejsalt",
   },
   {
-    name: "Pingo vejsalt 10 kg. Sæk",
+    name: "Pingo vejsalt - 10 kg sæk",
     saltType: "Vejsalt",
   },
   {
-    name: "Pingo vejsalt 10 kg. Spande",
+    name: "Pingo vejsalt - 10 kg spand",
     saltType: "Vejsalt",
   },
   {
-    name: "Pingo vejsalt bigbag 1000 kg.",
+    name: "Pingo vejsalt - 1000 kg big bag",
     saltType: "Vejsalt",
   },
   {
-    name: "Pingo vejsalt bigbag 600 kg",
+    name: "Pingo vejsalt - 600 kg big bag",
     saltType: "Vejsalt",
   },
   {
-    name: "MagnesiumKlorid 25 kg sæk, flakes",
+    name: "Magnesium Chloride flakes - 25 kg sæk",
     saltType: "Magnesiumklorid",
   },
   {
-    name: "Pingo-Produktionssalt, 20 kg",
+    name: "Pingo-Produktionssalt - 20 kg sæk",
     saltType: "Produktionssalt",
   },
   {
-    name: "Urea 15 kg sæk",
-    saltType: "Urea",
-  },
-  {
-    name: "Calcium Cloride, 15 kg, Flakes",
-    saltType: "Calciumchlorid",
-  },
-  {
-    name: "Calcium Cloride, 15 kg Prills",
-    saltType: "Calciumchlorid",
-  },
-  {
-    name: "Løst pingo Stensalt, Vejsalt",
+    name: "Urea 46% - 15 kg sæk",
     saltType: "Vejsalt",
   },
   {
-    name: "Løst Pingo Havsalt,",
-    saltType: "Havsalt",
+    name: "Calcium Chloride flakes - 15 kg sæk",
+    saltType: "Calciumchlorid",
+  },
+  {
+    name: "Calcium Cloride prills - 15 kg sæk",
+    saltType: "Calciumchlorid",
+  },
+  {
+    name: "Pingo Stensalt - Bulk",
+    saltType: "Vejsalt",
+  },
+  {
+    name: "Pingo Havsalt - Bulk",
+    saltType: "Vejsalt",
+  },
+  {
+    name: "Salttabletter til blødgøringsanlæg - 10 kg sæk",
+    saltType: "Blødgøringssalt",
+  },
+  {
+    name: "Salttabletter til blødgøringsanlæg - 25 kg sæk",
+    saltType: "Blødgøringssalt",
+  },
+  {
+    name: "Fodersalt GMP+FSA sikret - Bulk",
+    saltType: "Fodersalt",
+  },
+  {
+    name: "Fodersalt GMP+FSA sikret - 1000 kg big bag",
+    saltType: "Fodersalt",
+  },
+  {
+    name: "Fodersalt GMP+FSA sikret - 25 kg sæk",
+    saltType: "Fodersalt",
+  },
+  {
+    name: "Hudesalt 80/20 Mix - Bulk",
+    saltType: "Konserveringssalt",
   },
 ];
 
 export default function ProdukterPage() {
+  const categories = ["Alle", ...new Set(products.map((product) => product.saltType))];
+  const [activeCategory, setActiveCategory] = useState("Alle");
+
+  const filteredProducts =
+    activeCategory === "Alle"
+      ? products
+      : products.filter((product) => product.saltType === activeCategory);
+
+  const groupedProducts = filteredProducts.reduce<Record<string, typeof products>>(
+    (groups, product) => {
+      if (!groups[product.saltType]) {
+        groups[product.saltType] = [];
+      }
+
+      groups[product.saltType].push(product);
+      return groups;
+    },
+    {}
+  );
+
   return (
     <main
       style={{
@@ -93,82 +141,140 @@ export default function ProdukterPage() {
             lineHeight: 0.95,
           }}
         >
-          Varebeskrivelse
+          Produktoversigt
         </h1>
-
-        <p
-          style={{
-            margin: 0,
-            maxWidth: "760px",
-            fontSize: "20px",
-            lineHeight: 1.7,
-            color: "rgba(255,255,255,0.9)",
-          }}
-        >
-          Oversigt over vores produkter med tilhørende salttype. Kontakt os for
-          tilbud, levering og produktinformation.
-        </p>
       </section>
 
       <section
         style={{
-          backgroundColor: "white",
-          borderRadius: "28px",
-          boxShadow: "0 14px 40px rgba(15, 23, 42, 0.09)",
-          border: "1px solid rgba(148, 163, 184, 0.16)",
-          overflow: "hidden",
+          display: "flex",
+          gap: "14px",
+          flexWrap: "wrap",
           marginBottom: "32px",
         }}
       >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1.9fr) minmax(180px, 0.8fr)",
-            backgroundColor: "#e2e8f0",
-            color: "#0f172a",
-            fontWeight: 700,
-          }}
-        >
-          <div style={{ padding: "18px 22px", borderRight: "1px solid #cbd5e1" }}>
-            Varebeskrivelse
-          </div>
-          <div style={{ padding: "18px 22px" }}>Type salt</div>
-        </div>
+        {categories.map((category) => {
+          const isActive = category === activeCategory;
 
-        {products.map((product, index) => (
-          <div
-            key={product.name}
+          return (
+            <button
+              key={category}
+              type="button"
+              onClick={() => setActiveCategory(category)}
+              style={{
+                padding: "14px 20px",
+                borderRadius: "999px",
+                border: isActive ? "1px solid #0f172a" : "1px solid #dbe4ee",
+                backgroundColor: isActive ? "#0f172a" : "white",
+                color: isActive ? "white" : "#0f172a",
+                fontSize: "16px",
+                fontWeight: 700,
+                cursor: "pointer",
+                boxShadow: "none",
+              }}
+            >
+              {category}
+            </button>
+          );
+        })}
+      </section>
+
+      <section
+        style={{
+          display: "grid",
+          gap: "24px",
+          marginBottom: "32px",
+        }}
+      >
+        {Object.entries(groupedProducts).map(([category, items]) => (
+          <section
+            key={category}
             style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(0, 1.9fr) minmax(180px, 0.8fr)",
-              backgroundColor: index % 2 === 0 ? "#ffffff" : "#f8fafc",
-              borderTop: "1px solid #e2e8f0",
+              backgroundColor: "white",
+              borderRadius: "20px",
+              boxShadow: "0 10px 28px rgba(15, 23, 42, 0.06)",
+              border: "1px solid rgba(148, 163, 184, 0.14)",
+              overflow: "hidden",
             }}
           >
             <div
               style={{
-                padding: "18px 22px",
-                borderRight: "1px solid #e2e8f0",
-                fontSize: "20px",
-                lineHeight: 1.45,
+                padding: "22px 28px 18px 28px",
+                borderBottom: "1px solid #e8eef5",
+                backgroundColor: "#f8fafc",
               }}
             >
-              {product.name}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: "6px",
+                }}
+              >
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    letterSpacing: "1.8px",
+                    textTransform: "uppercase",
+                    color: "#64748b",
+                  }}
+                >
+                  Kategori
+                </p>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: "28px",
+                    lineHeight: 1.1,
+                    color: "#0f172a",
+                  }}
+                >
+                  {category}
+                </h2>
+              </div>
             </div>
-            <div
-              style={{
-                padding: "18px 22px",
-                display: "flex",
-                alignItems: "center",
-                fontSize: "18px",
-                color: "#334155",
-                lineHeight: 1.4,
-              }}
-            >
-              {product.saltType}
+
+            <div style={{ padding: "8px 28px 10px 28px" }}>
+              {items.map((product, index) => (
+                <div
+                  key={product.name}
+                  style={{
+                    padding: "16px 0",
+                    borderBottom:
+                      index === items.length - 1 ? "none" : "1px solid #e8eef5",
+                  }}
+                >
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "19px",
+                      lineHeight: 1.45,
+                      color: "#0f172a",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {product.name}
+                  </p>
+                </div>
+              ))}
             </div>
-          </div>
+          </section>
         ))}
+
+        {filteredProducts.length === 0 && (
+          <div
+            style={{
+              padding: "24px 22px",
+              color: "#475569",
+              fontSize: "18px",
+            }}
+          >
+            Der er ingen produkter i denne kategori endnu.
+          </div>
+        )}
       </section>
 
     </main>
