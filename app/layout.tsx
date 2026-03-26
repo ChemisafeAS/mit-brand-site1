@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   title: "CHEMISAFE AS – Professionelt salt og afisningsprodukter",
   description:
     "Stort sortiment af salt og afisningsprodukter til erhverv – vejsalt, fodersalt, blødgøringstabletter, urea, MgCl2 og meget mere. Hurtig levering – få et tilbud i dag.",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({
