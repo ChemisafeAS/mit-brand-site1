@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import styles from "./produkter.module.css";
 
 const products = [
   {
@@ -103,56 +104,12 @@ export default function ProdukterPage() {
   );
 
   return (
-    <main
-      style={{
-        maxWidth: "1280px",
-        margin: "0 auto",
-        padding: "56px 32px 80px 32px",
-      }}
-    >
-      <section
-        style={{
-          background:
-            "linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #334155 100%)",
-          color: "white",
-          borderRadius: "32px",
-          padding: "48px",
-          boxShadow: "0 22px 60px rgba(15, 23, 42, 0.18)",
-          marginBottom: "32px",
-        }}
-      >
-        <p
-          style={{
-            margin: "0 0 14px 0",
-            textTransform: "uppercase",
-            letterSpacing: "1.8px",
-            fontWeight: 700,
-            fontSize: "14px",
-            opacity: 0.82,
-          }}
-        >
-          Produkter
-        </p>
-
-        <h1
-          style={{
-            margin: "0 0 18px 0",
-            fontSize: "clamp(42px, 7vw, 72px)",
-            lineHeight: 0.95,
-          }}
-        >
-          Produktoversigt
-        </h1>
+    <main className={styles.page}>
+      <section className={styles.hero}>
+        <h1 className={styles.heroTitle}>Produktoversigt</h1>
       </section>
 
-      <section
-        style={{
-          display: "flex",
-          gap: "14px",
-          flexWrap: "wrap",
-          marginBottom: "32px",
-        }}
-      >
+      <section className={styles.filterBar}>
         {categories.map((category) => {
           const isActive = category === activeCategory;
 
@@ -161,17 +118,9 @@ export default function ProdukterPage() {
               key={category}
               type="button"
               onClick={() => setActiveCategory(category)}
-              style={{
-                padding: "14px 20px",
-                borderRadius: "999px",
-                border: isActive ? "1px solid #0f172a" : "1px solid #dbe4ee",
-                backgroundColor: isActive ? "#0f172a" : "white",
-                color: isActive ? "white" : "#0f172a",
-                fontSize: "16px",
-                fontWeight: 700,
-                cursor: "pointer",
-                boxShadow: "none",
-              }}
+              className={`${styles.filterButton} ${
+                isActive ? styles.filterButtonActive : ""
+              }`}
             >
               {category}
             </button>
@@ -179,85 +128,19 @@ export default function ProdukterPage() {
         })}
       </section>
 
-      <section
-        style={{
-          display: "grid",
-          gap: "24px",
-          marginBottom: "32px",
-        }}
-      >
+      <section className={styles.productGroups}>
         {Object.entries(groupedProducts).map(([category, items]) => (
-          <section
-            key={category}
-            style={{
-              backgroundColor: "white",
-              borderRadius: "20px",
-              boxShadow: "0 10px 28px rgba(15, 23, 42, 0.06)",
-              border: "1px solid rgba(148, 163, 184, 0.14)",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                padding: "22px 28px 18px 28px",
-                borderBottom: "1px solid #e8eef5",
-                backgroundColor: "#f8fafc",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "flex-start",
-                  gap: "6px",
-                }}
-              >
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    letterSpacing: "1.8px",
-                    textTransform: "uppercase",
-                    color: "#64748b",
-                  }}
-                >
-                  Kategori
-                </p>
-                <h2
-                  style={{
-                    margin: 0,
-                    fontSize: "28px",
-                    lineHeight: 1.1,
-                    color: "#0f172a",
-                  }}
-                >
-                  {category}
-                </h2>
+          <section key={category} className={styles.groupCard}>
+            <div className={styles.groupHeader}>
+              <div>
+                <h2 className={styles.groupTitle}>{category}</h2>
               </div>
             </div>
 
-            <div style={{ padding: "8px 28px 10px 28px" }}>
-              {items.map((product, index) => (
-                <div
-                  key={product.name}
-                  style={{
-                    padding: "16px 0",
-                    borderBottom:
-                      index === items.length - 1 ? "none" : "1px solid #e8eef5",
-                  }}
-                >
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: "19px",
-                      lineHeight: 1.45,
-                      color: "#0f172a",
-                      fontWeight: 500,
-                    }}
-                  >
-                    {product.name}
-                  </p>
+            <div className={styles.groupBody}>
+              {items.map((product) => (
+                <div key={product.name} className={styles.productRow}>
+                  <p className={styles.productName}>{product.name}</p>
                 </div>
               ))}
             </div>
@@ -265,18 +148,11 @@ export default function ProdukterPage() {
         ))}
 
         {filteredProducts.length === 0 && (
-          <div
-            style={{
-              padding: "24px 22px",
-              color: "#475569",
-              fontSize: "18px",
-            }}
-          >
+          <div className={styles.emptyState}>
             Der er ingen produkter i denne kategori endnu.
           </div>
         )}
       </section>
-
     </main>
   );
 }
