@@ -1,15 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import AddressAutocompleteField from "@/components/AddressAutocompleteField";
 import ContactsListClient from "./ContactsListClient";
 import ContactsFilterBar from "./ContactsFilterBar";
+import CreateContactPanel from "./CreateContactPanel";
 import styles from "./kontakter.module.css";
-import { contactCategories } from "@/lib/contact-schema";
 import { getContacts } from "@/lib/contacts";
 import { formatEmployeeName } from "@/lib/employee-user";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
-import { createContact } from "@/app/medarbejder/actions";
 
 type KontakterPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -103,58 +101,7 @@ export default async function KontakterPage({
         </section>
       )}
 
-      <section className={styles.panel}>
-        <h2 className={styles.sectionTitle}>Opret kontakt</h2>
-        <p className={styles.sectionText}>
-          Brug denne formular til at oprette nye kunder, leverandører eller
-          andre vigtige kontakter.
-        </p>
-
-        <form action={createContact} className={styles.formGrid}>
-          <input name="returnPath" type="hidden" value="/kontakter" />
-          <input
-            className={styles.input}
-            name="companyName"
-            placeholder="Virksomhedsnavn"
-            required
-            type="text"
-          />
-          <select className={styles.select} name="category" required>
-            <option value="">Vælg kategori</option>
-            {contactCategories.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </select>
-          <input
-            className={styles.input}
-            name="contactPerson"
-            placeholder="Kontaktperson"
-            type="text"
-          />
-          <input className={styles.input} name="role" placeholder="Rolle" type="text" />
-          <input className={styles.input} name="phone" placeholder="Telefon" type="text" />
-          <input className={styles.input} name="email" placeholder="E-mail" type="email" />
-          <div className={styles.fieldWide}>
-            <AddressAutocompleteField
-              className={styles.input}
-              name="address"
-              placeholder="Adresse"
-            />
-          </div>
-          <textarea
-            className={`${styles.textarea} ${styles.fieldWide}`}
-            name="notes"
-            placeholder="Noter"
-          />
-          <div className={styles.fieldWide}>
-            <button className={styles.primaryButton} type="submit">
-              Opret kontakt
-            </button>
-          </div>
-        </form>
-      </section>
+      <CreateContactPanel defaultOpen={status === "error"} />
 
       <ContactsFilterBar
         initialCategory={categoryFilter ?? "Alle"}
