@@ -31,7 +31,7 @@ export default async function Home({ searchParams }: HomePageProps) {
       <main
         style={{
           position: "relative",
-          minHeight: "100vh",
+          minHeight: "clamp(640px, 78vh, 920px)",
           width: "100%",
           overflow: "hidden",
         }}
@@ -63,7 +63,7 @@ export default async function Home({ searchParams }: HomePageProps) {
           maxWidth: "1440px",
           margin: "0 auto",
           padding: "110px 32px 80px 32px",
-          minHeight: "100vh",
+          minHeight: "clamp(640px, 78vh, 920px)",
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
