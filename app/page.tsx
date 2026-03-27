@@ -10,13 +10,13 @@ type HomePageProps = {
 };
 
 export default async function Home({ searchParams }: HomePageProps) {
-  const heroHeight = "clamp(640px, 78vh, 920px)";
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const editValue = Array.isArray(resolvedSearchParams?.edit)
     ? resolvedSearchParams?.edit[0]
     : resolvedSearchParams?.edit;
   const user = await getEmployeeUser();
   const isEditing = editValue === "1" && Boolean(user);
+  const heroHeight = isEditing ? "520px" : "clamp(640px, 78vh, 920px)";
   const content = await getPageContent("home");
   const returnPath = "/?edit=1";
 
@@ -30,6 +30,7 @@ export default async function Home({ searchParams }: HomePageProps) {
         />
       )}
       <main
+        key={isEditing ? "home-edit" : "home-preview"}
         style={{
           position: "relative",
           minHeight: heroHeight,
@@ -78,70 +79,28 @@ export default async function Home({ searchParams }: HomePageProps) {
         }}
       >
         <section style={{ maxWidth: "760px", color: "white" }}>
-          {isEditing ? (
-            <div
-              style={{
-                marginBottom: "24px",
-                fontSize: "clamp(52px, 8vw, 96px)",
-                lineHeight: 0.95,
-                fontWeight: 700,
-              }}
-            >
-              <EditableField
-                as="input"
-                contentKey="hero_title"
-                isEditing={isEditing}
-                label="Forside: overskrift"
-                page="home"
-                returnPath={returnPath}
-                value={content.content.hero_title}
-              />
-            </div>
-          ) : (
-            <h1
-              style={{
-                fontSize: "clamp(52px, 8vw, 96px)",
-                lineHeight: 0.95,
-                margin: "0 0 24px 0",
-                fontWeight: 700,
-              }}
-            >
-              {content.content.hero_title}
-            </h1>
-          )}
+          <h1
+            style={{
+              fontSize: "clamp(52px, 8vw, 96px)",
+              lineHeight: 0.95,
+              margin: "0 0 24px 0",
+              fontWeight: 700,
+            }}
+          >
+            {content.content.hero_title}
+          </h1>
 
-          {isEditing ? (
-            <div
-              style={{
-                fontSize: "22px",
-                lineHeight: 1.7,
-                margin: "0 0 34px 0",
-                maxWidth: "720px",
-                color: "rgba(255,255,255,0.92)",
-              }}
-            >
-              <EditableField
-                contentKey="hero_body"
-                isEditing={isEditing}
-                label="Forside: introtekst"
-                page="home"
-                returnPath={returnPath}
-                value={content.content.hero_body}
-              />
-            </div>
-          ) : (
-            <p
-              style={{
-                fontSize: "22px",
-                lineHeight: 1.7,
-                margin: "0 0 34px 0",
-                maxWidth: "720px",
-                color: "rgba(255,255,255,0.92)",
-              }}
-            >
-              {content.content.hero_body}
-            </p>
-          )}
+          <p
+            style={{
+              fontSize: "22px",
+              lineHeight: 1.7,
+              margin: "0 0 34px 0",
+              maxWidth: "720px",
+              color: "rgba(255,255,255,0.92)",
+            }}
+          >
+            {content.content.hero_body}
+          </p>
 
           <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
             <Link
@@ -189,46 +148,79 @@ export default async function Home({ searchParams }: HomePageProps) {
             </Link>
           </div>
 
-          {isEditing && (
-            <div
-              style={{
-                marginTop: "18px",
-                display: "grid",
-                gap: "12px",
-                maxWidth: "560px",
-              }}
-            >
-              <EditableField
-                as="input"
-                contentKey="cta_primary"
-                isEditing={isEditing}
-                label="Forside: primær knap"
-                page="home"
-                returnPath={returnPath}
-                value={content.content.cta_primary}
-              />
-              <EditableField
-                as="input"
-                contentKey="cta_secondary"
-                isEditing={isEditing}
-                label="Forside: sekundær knap"
-                page="home"
-                returnPath={returnPath}
-                value={content.content.cta_secondary}
-              />
-              <EditableField
-                as="input"
-                contentKey="cta_tertiary"
-                isEditing={isEditing}
-                label="Forside: tredje knap"
-                page="home"
-                returnPath={returnPath}
-                value={content.content.cta_tertiary}
-              />
-            </div>
-          )}
         </section>
       </div>
+
+      {isEditing && (
+        <section
+          style={{
+            position: "relative",
+            zIndex: 2,
+            maxWidth: "1440px",
+            margin: "0 auto",
+            padding: "0 32px 80px 32px",
+          }}
+        >
+          <div
+            style={{
+              maxWidth: "760px",
+              marginTop: "-24px",
+              padding: "24px",
+              borderRadius: "24px",
+              background: "white",
+              border: "1px solid rgba(148, 163, 184, 0.16)",
+              boxShadow: "0 18px 50px rgba(15, 23, 42, 0.08)",
+              display: "grid",
+              gap: "16px",
+            }}
+          >
+            <EditableField
+              as="input"
+              contentKey="hero_title"
+              isEditing={isEditing}
+              label="Forside: overskrift"
+              page="home"
+              returnPath={returnPath}
+              value={content.content.hero_title}
+            />
+            <EditableField
+              contentKey="hero_body"
+              isEditing={isEditing}
+              label="Forside: introtekst"
+              page="home"
+              returnPath={returnPath}
+              value={content.content.hero_body}
+            />
+            <EditableField
+              as="input"
+              contentKey="cta_primary"
+              isEditing={isEditing}
+              label="Forside: primær knap"
+              page="home"
+              returnPath={returnPath}
+              value={content.content.cta_primary}
+            />
+            <EditableField
+              as="input"
+              contentKey="cta_secondary"
+              isEditing={isEditing}
+              label="Forside: sekundær knap"
+              page="home"
+              returnPath={returnPath}
+              value={content.content.cta_secondary}
+            />
+            <EditableField
+              as="input"
+              contentKey="cta_tertiary"
+              isEditing={isEditing}
+              label="Forside: tredje knap"
+              page="home"
+              returnPath={returnPath}
+              value={content.content.cta_tertiary}
+            />
+          </div>
+        </section>
+      )}
     </main>
     </>
   );

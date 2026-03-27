@@ -24,7 +24,7 @@ export default function PageEditBar({
         <Link className={styles.secondaryButton} href="/medarbejder">
           Medarbejderside
         </Link>
-        <Link className={styles.button} href={previewHref}>
+        <Link className={styles.button} href={previewHref} prefetch={false}>
           {isEditing ? "Forhåndsvisning" : "Redigering"}
         </Link>
       </div>

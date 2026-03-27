@@ -28,7 +28,7 @@ export default async function OmPage({ searchParams }: OmPageProps) {
           title="om-siden"
         />
       )}
-    <main className={styles.page}>
+    <main className={styles.page} key={isEditing ? "om-edit" : "om-preview"}>
       <section className={styles.hero}>
         {isEditing ? (
           <div className={styles.heroTitle}>
@@ -106,47 +106,51 @@ export default async function OmPage({ searchParams }: OmPageProps) {
           )}
         </article>
 
-        <aside className={styles.imageCard}>
-          <Image
-            src="/om-lager.png"
-            alt="Læssemaskine og lastbiler i saltlager"
-            width={1152}
-            height={768}
-            className={styles.image}
-          />
-          <div className={styles.imageOverlay} />
-          <div className={styles.imageCaption}>
-            {isEditing ? (
-              <>
-                <div className={styles.captionTitle}>
-                  <EditableField
-                    as="input"
-                    contentKey="caption_title"
-                    isEditing={isEditing}
-                    label="Om: billedtitel"
-                    page="om"
-                    returnPath={returnPath}
-                    value={content.content.caption_title}
-                  />
-                </div>
-                <div className={styles.captionText}>
-                  <EditableField
-                    contentKey="caption_body"
-                    isEditing={isEditing}
-                    label="Om: billedtekst"
-                    page="om"
-                    returnPath={returnPath}
-                    value={content.content.caption_body}
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <p className={styles.captionTitle}>{content.content.caption_title}</p>
-                <p className={styles.captionText}>{content.content.caption_body}</p>
-              </>
+        <aside className={styles.imageColumn}>
+          <div className={styles.imageCard}>
+            <Image
+              src="/om-lager.png"
+              alt="Læssemaskine og lastbiler i saltlager"
+              width={1152}
+              height={768}
+              className={styles.image}
+            />
+            <div className={styles.imageOverlay} />
+            {!isEditing && (
+              <div className={styles.imageCaption}>
+                <>
+                  <p className={styles.captionTitle}>{content.content.caption_title}</p>
+                  <p className={styles.captionText}>{content.content.caption_body}</p>
+                </>
+              </div>
             )}
           </div>
+
+          {isEditing && (
+            <div className={styles.imageCaptionEditor}>
+              <div className={styles.captionTitleEditor}>
+                <EditableField
+                  as="input"
+                  contentKey="caption_title"
+                  isEditing={isEditing}
+                  label="Om: billedtitel"
+                  page="om"
+                  returnPath={returnPath}
+                  value={content.content.caption_title}
+                />
+              </div>
+              <div className={styles.captionTextEditor}>
+                <EditableField
+                  contentKey="caption_body"
+                  isEditing={isEditing}
+                  label="Om: billedtekst"
+                  page="om"
+                  returnPath={returnPath}
+                  value={content.content.caption_body}
+                />
+              </div>
+            </div>
+          )}
         </aside>
       </section>
 
