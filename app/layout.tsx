@@ -63,7 +63,7 @@ export default function RootLayout({
                 <h3 style={{ marginBottom: "10px" }}>Chemisafe A/S</h3>
 
                 <p style={{ lineHeight: "1.7" }}>
-                  H P Christensens Vej 1
+                  H.P. Christensens Vej 1
                   <br />
                   3000 Helsingør
                 </p>
@@ -98,7 +98,7 @@ export default function RootLayout({
 
                 <p>Vejsalt</p>
                 <p>Fodersalt</p>
-                <p>Saltpoletter</p>
+                <p>Blødgøringssalt</p>
                 <p>Øvrige saltprodukter</p>
               </div>
 
@@ -137,7 +137,26 @@ export default function RootLayout({
             >
               <p>© {new Date().getFullYear()} Chemisafe A/S</p>
 
-              <p>Leverandør af saltprodukter til erhverv</p>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "14px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <p style={{ margin: 0 }}>Leverandør af saltprodukter til erhverv</p>
+                <a
+                  href="/medarbejder-login"
+                  style={{
+                    color: "rgba(255,255,255,0.68)",
+                    fontSize: "13px",
+                    textDecoration: "underline",
+                  }}
+                >
+                  Medarbejder-login
+                </a>
+              </div>
             </div>
           </div>
         </footer>

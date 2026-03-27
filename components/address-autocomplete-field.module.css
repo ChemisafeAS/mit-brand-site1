@@ -1,0 +1,45 @@
+.wrapper {
+  position: relative;
+}
+
+.dropdown {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+}
+
+.option,
+.status {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  font: inherit;
+  background: white;
+  color: #0f172a;
+}
+
+.option {
+  border: 0;
+  cursor: pointer;
+}
+
+.option + .option,
+.status + .option {
+  border-top: 1px solid #e2e8f0;
+}
+
+.option:hover {
+  background: #f8fafc;
+}
+
+.status {
+  color: #475569;
+}

@@ -1,16 +1,41 @@
 import Link from "next/link";
 import Image from "next/image";
+import EditableField from "@/components/EditableField";
+import PageEditBar from "@/components/PageEditBar";
+import { getEmployeeUser } from "@/lib/employee-user";
+import { getPageContent } from "@/lib/site-content";
 
-export default function Home() {
+type HomePageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function Home({ searchParams }: HomePageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const editValue = Array.isArray(resolvedSearchParams?.edit)
+    ? resolvedSearchParams?.edit[0]
+    : resolvedSearchParams?.edit;
+  const user = await getEmployeeUser();
+  const isEditing = editValue === "1" && Boolean(user);
+  const content = await getPageContent("home");
+  const returnPath = "/?edit=1";
+
   return (
-    <main
-      style={{
-        position: "relative",
-        minHeight: "100vh",
-        width: "100%",
-        overflow: "hidden",
-      }}
-    >
+    <>
+      {user && (
+        <PageEditBar
+          isEditing={isEditing}
+          previewHref={isEditing ? "/" : "/?edit=1"}
+          title="forsiden"
+        />
+      )}
+      <main
+        style={{
+          position: "relative",
+          minHeight: "100vh",
+          width: "100%",
+          overflow: "hidden",
+        }}
+      >
       <Image
         src="/salt.jpg"
         alt="Salt produkter"
@@ -45,30 +70,70 @@ export default function Home() {
         }}
       >
         <section style={{ maxWidth: "760px", color: "white" }}>
-          <h1
-            style={{
-              fontSize: "clamp(52px, 8vw, 96px)",
-              lineHeight: 0.95,
-              margin: "0 0 24px 0",
-              fontWeight: 700,
-            }}
-          >
-            Saltprodukter til erhverv
-          </h1>
+          {isEditing ? (
+            <div
+              style={{
+                marginBottom: "24px",
+                fontSize: "clamp(52px, 8vw, 96px)",
+                lineHeight: 0.95,
+                fontWeight: 700,
+              }}
+            >
+              <EditableField
+                as="input"
+                contentKey="hero_title"
+                isEditing={isEditing}
+                label="Forside: overskrift"
+                page="home"
+                returnPath={returnPath}
+                value={content.content.hero_title}
+              />
+            </div>
+          ) : (
+            <h1
+              style={{
+                fontSize: "clamp(52px, 8vw, 96px)",
+                lineHeight: 0.95,
+                margin: "0 0 24px 0",
+                fontWeight: 700,
+              }}
+            >
+              {content.content.hero_title}
+            </h1>
+          )}
 
-          <p
-            style={{
-              fontSize: "22px",
-              lineHeight: 1.7,
-              margin: "0 0 34px 0",
-              maxWidth: "720px",
-              color: "rgba(255,255,255,0.92)",
-            }}
-          >
-            Chemisafe A/S leverer vejsalt, fodersalt, saltpoletter og et bredt
-            sortiment af øvrige saltprodukter til professionelle kunder. Kontakt
-            os for tilbud, levering og den rigtige løsning til jeres behov.
-          </p>
+          {isEditing ? (
+            <div
+              style={{
+                fontSize: "22px",
+                lineHeight: 1.7,
+                margin: "0 0 34px 0",
+                maxWidth: "720px",
+                color: "rgba(255,255,255,0.92)",
+              }}
+            >
+              <EditableField
+                contentKey="hero_body"
+                isEditing={isEditing}
+                label="Forside: introtekst"
+                page="home"
+                returnPath={returnPath}
+                value={content.content.hero_body}
+              />
+            </div>
+          ) : (
+            <p
+              style={{
+                fontSize: "22px",
+                lineHeight: 1.7,
+                margin: "0 0 34px 0",
+                maxWidth: "720px",
+                color: "rgba(255,255,255,0.92)",
+              }}
+            >
+              {content.content.hero_body}
+            </p>
+          )}
 
           <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
             <Link
@@ -82,7 +147,7 @@ export default function Home() {
                 fontSize: "18px",
               }}
             >
-              Se produkter
+              {content.content.cta_primary}
             </Link>
 
             <Link
@@ -97,7 +162,7 @@ export default function Home() {
                 fontSize: "18px",
               }}
             >
-              Få et tilbud
+              {content.content.cta_secondary}
             </Link>
 
             <Link
@@ -112,11 +177,51 @@ export default function Home() {
                 backgroundColor: "rgba(255,255,255,0.08)",
               }}
             >
-              Læs mere
+              {content.content.cta_tertiary}
             </Link>
           </div>
+
+          {isEditing && (
+            <div
+              style={{
+                marginTop: "18px",
+                display: "grid",
+                gap: "12px",
+                maxWidth: "560px",
+              }}
+            >
+              <EditableField
+                as="input"
+                contentKey="cta_primary"
+                isEditing={isEditing}
+                label="Forside: primær knap"
+                page="home"
+                returnPath={returnPath}
+                value={content.content.cta_primary}
+              />
+              <EditableField
+                as="input"
+                contentKey="cta_secondary"
+                isEditing={isEditing}
+                label="Forside: sekundær knap"
+                page="home"
+                returnPath={returnPath}
+                value={content.content.cta_secondary}
+              />
+              <EditableField
+                as="input"
+                contentKey="cta_tertiary"
+                isEditing={isEditing}
+                label="Forside: tredje knap"
+                page="home"
+                returnPath={returnPath}
+                value={content.content.cta_tertiary}
+              />
+            </div>
+          )}
         </section>
       </div>
     </main>
+    </>
   );
 }

@@ -1,0 +1,46 @@
+.form {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.label {
+  display: grid;
+  gap: 8px;
+}
+
+.labelText {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  font: inherit;
+  line-height: 1.5;
+  padding: 12px 14px;
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 110px;
+}
+
+.button {
+  justify-self: start;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: #0f172a;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}

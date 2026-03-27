@@ -1,0 +1,361 @@
+.page {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 48px 32px 80px;
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 36px;
+  margin-bottom: 24px;
+  border-radius: 28px;
+  color: white;
+  background: linear-gradient(140deg, #0f172a 0%, #1d4ed8 52%, #0f766e 100%);
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.18);
+}
+
+.heroText {
+  max-width: 720px;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.title {
+  margin: 0 0 14px;
+  font-size: clamp(34px, 6vw, 60px);
+  line-height: 0.95;
+}
+
+.lead {
+  margin: 0;
+  max-width: 640px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 18px;
+}
+
+.logoutForm {
+  flex-shrink: 0;
+}
+
+.logoutButton {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.notice {
+  margin-bottom: 24px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  line-height: 1.7;
+  border: 1px solid transparent;
+}
+
+.noticeSuccess {
+  background: #ecfdf5;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+.noticeError {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+.noticeWarning {
+  background: #fff7ed;
+  color: #9a3412;
+  border-color: #fed7aa;
+}
+
+.card {
+  background: white;
+  border-radius: 22px;
+  padding: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 14px 40px rgba(15, 23, 42, 0.06);
+}
+
+.cardWide {
+  grid-column: span 2;
+}
+
+.cardTitle {
+  margin: 0 0 14px;
+  font-size: 24px;
+  color: #0f172a;
+}
+
+.cardText {
+  margin: 0;
+  line-height: 1.7;
+  color: #475569;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.linkList {
+  display: grid;
+  gap: 12px;
+}
+
+.linkItem {
+  display: block;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+}
+
+.linkLabel {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+
+.linkText {
+  margin: 0;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.infoList {
+  display: grid;
+  gap: 14px;
+}
+
+.infoRow {
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.infoRow:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.infoLabel {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.infoValue {
+  margin: 0;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  background: #ecfeff;
+  color: #155e75;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.createForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.managerList {
+  display: grid;
+  gap: 12px;
+}
+
+.managerRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 18px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.rowForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.productRowForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.textInput,
+.selectInput {
+  width: 100%;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.textInput:focus,
+.selectInput:focus {
+  outline: 2px solid rgba(14, 165, 233, 0.18);
+  border-color: #0ea5e9;
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton,
+.iconButton {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primaryButton {
+  background: #0f172a;
+  color: white;
+}
+
+.secondaryButton {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.dangerButton {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.iconButton {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.dangerButton:disabled,
+.iconButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.productManagerGroups {
+  display: grid;
+  gap: 18px;
+}
+
+.productGroup {
+  padding: 18px;
+  border-radius: 20px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.productGroupHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: 20px;
+  color: #0f172a;
+}
+
+.groupCount {
+  font-size: 14px;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.emptyListText {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+@media (max-width: 960px) {
+  .page {
+    padding: 28px 16px 48px;
+  }
+
+  .hero {
+    flex-direction: column;
+    padding: 28px 20px;
+    border-radius: 22px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cardWide {
+    grid-column: auto;
+  }
+
+  .createForm,
+  .rowForm,
+  .productRowForm,
+  .managerRow {
+    grid-template-columns: 1fr;
+  }
+
+  .rowActions {
+    justify-content: flex-start;
+  }
+}
