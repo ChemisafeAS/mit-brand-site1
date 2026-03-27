@@ -10,6 +10,7 @@ type HomePageProps = {
 };
 
 export default async function Home({ searchParams }: HomePageProps) {
+  const heroHeight = "clamp(640px, 78vh, 920px)";
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const editValue = Array.isArray(resolvedSearchParams?.edit)
     ? resolvedSearchParams?.edit[0]
@@ -31,30 +32,37 @@ export default async function Home({ searchParams }: HomePageProps) {
       <main
         style={{
           position: "relative",
-          minHeight: "clamp(640px, 78vh, 920px)",
+          minHeight: heroHeight,
           width: "100%",
-          overflow: "hidden",
         }}
       >
-      <Image
-        src="/salt.jpg"
-        alt="Salt produkter"
-        fill
-        style={{
-          objectFit: "cover",
-          zIndex: 0,
-        }}
-      />
-
       <div
         style={{
           position: "absolute",
-          inset: 0,
-          background:
-            "linear-gradient(90deg, rgba(15,23,42,0.88) 0%, rgba(15,23,42,0.72) 38%, rgba(15,23,42,0.18) 100%)",
-          zIndex: 1,
+          inset: "0 0 auto 0",
+          height: heroHeight,
+          overflow: "hidden",
+          zIndex: 0,
         }}
-      />
+      >
+        <Image
+          src="/salt.jpg"
+          alt="Salt produkter"
+          fill
+          style={{
+            objectFit: "cover",
+          }}
+        />
+
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(90deg, rgba(15,23,42,0.88) 0%, rgba(15,23,42,0.72) 38%, rgba(15,23,42,0.18) 100%)",
+          }}
+        />
+      </div>
 
       <div
         style={{
@@ -63,7 +71,7 @@ export default async function Home({ searchParams }: HomePageProps) {
           maxWidth: "1440px",
           margin: "0 auto",
           padding: "110px 32px 80px 32px",
-          minHeight: "clamp(640px, 78vh, 920px)",
+          minHeight: heroHeight,
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
