@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { runSkiReport } from "./actions";
 import { initialSkiReportState, type SkiReportState } from "./state";
@@ -138,6 +138,45 @@ type PickerGroup = {
   id: number;
   kind: "files" | "folder";
 };
+
+function FolderInput({
+  className,
+  name,
+  onFileCountChange,
+}: {
+  className: string;
+  name: string;
+  onFileCountChange: (count: number) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const input = inputRef.current;
+
+    if (!input) {
+      return;
+    }
+
+    input.setAttribute("webkitdirectory", "");
+  }, []);
+
+  return (
+    <input
+      ref={inputRef}
+      className={className}
+      type="file"
+      name={name}
+      accept=".pdf"
+      multiple
+      onChange={(event) => {
+        const count = Array.from(event.currentTarget.files ?? []).filter((file) =>
+          file.name.toLowerCase().endsWith(".pdf")
+        ).length;
+        onFileCountChange(count);
+      }}
+    />
+  );
+}
 
 function EditableResultsTable({ initialRows }: { initialRows: ReportRow[] }) {
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
@@ -439,25 +478,24 @@ export default function SkiReportTool() {
                     ? `Fakturaer (.pdf, flere filer er tilladt) ${pickerIndex + 1}`
                     : `Mappe med PDF-fakturaer ${pickerIndex + 1}`}
                 </span>
-                <input
-                  className={styles.input}
-                  type="file"
-                  name="invoices"
-                  accept=".pdf"
-                  multiple
-                  onChange={(event) => {
-                    const count =
-                      group.kind === "folder"
-                        ? Array.from(event.currentTarget.files ?? []).filter((file) =>
-                            file.name.toLowerCase().endsWith(".pdf")
-                          ).length
-                        : event.currentTarget.files?.length ?? 0;
-                    updatePickerCount(group.id, count);
-                  }}
-                  {...(group.kind === "folder"
-                    ? ({ webkitdirectory: "", directory: "" } as Record<string, string>)
-                    : {})}
-                />
+                {group.kind === "folder" ? (
+                  <FolderInput
+                    className={styles.input}
+                    name="invoices"
+                    onFileCountChange={(count) => updatePickerCount(group.id, count)}
+                  />
+                ) : (
+                  <input
+                    className={styles.input}
+                    type="file"
+                    name="invoices"
+                    accept=".pdf"
+                    multiple
+                    onChange={(event) => {
+                      updatePickerCount(group.id, event.currentTarget.files?.length ?? 0);
+                    }}
+                  />
+                )}
                 {pickerCounts[group.id] ? (
                   <span className={styles.helperText}>
                     Valgte PDF-filer: <strong>{pickerCounts[group.id]}</strong>
