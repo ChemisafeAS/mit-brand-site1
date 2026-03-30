@@ -143,6 +143,9 @@ function normalizeWhitespace(value: string) {
 function normalizeLookupValue(value: string) {
   return normalizeWhitespace(value)
     .toLocaleLowerCase("da-DK")
+    .replaceAll("æ", "ae")
+    .replaceAll("ø", "oe")
+    .replaceAll("å", "aa")
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .replace(/[^a-z0-9 ]+/g, " ")
