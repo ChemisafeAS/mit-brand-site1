@@ -1,15 +1,36 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
-import { useFormStatus } from "react-dom";
-import { runSkiReport } from "./actions";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createClient as createSupabaseClient } from "@/lib/supabase/client";
+import { getStoragePathForInvoice, SKI_UPLOAD_BUCKET } from "@/lib/ski-storage";
+import { processSkiReport } from "./actions";
 import { initialSkiReportState, type SkiReportState } from "./state";
 import styles from "./ski-report.module.css";
 import type { ReportRow } from "@/lib/ski-report";
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
+type FileWithRelativePath = File & {
+  webkitRelativePath?: string;
+};
 
+async function mapInBatches<T, R>(
+  items: T[],
+  batchSize: number,
+  mapper: (item: T, index: number) => Promise<R>
+) {
+  const results: R[] = [];
+
+  for (let index = 0; index < items.length; index += batchSize) {
+    const batch = items.slice(index, index + batchSize);
+    const batchResults = await Promise.all(
+      batch.map((item, batchIndex) => mapper(item, index + batchIndex))
+    );
+    results.push(...batchResults);
+  }
+
+  return results;
+}
+
+function SubmitButton({ pending }: { pending: boolean }) {
   return (
     <button className={styles.primaryButton} type="submit" disabled={pending}>
       {pending ? "Behandler fakturaer..." : "Kør test på fakturaer"}
@@ -136,12 +157,10 @@ function Summary({ state }: { state: SkiReportState }) {
 
 function FolderInput({
   className,
-  name,
-  onFileCountChange,
+  onFilesChange,
 }: {
   className: string;
-  name: string;
-  onFileCountChange: (count: number) => void;
+  onFilesChange: (files: FileWithRelativePath[]) => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -160,14 +179,13 @@ function FolderInput({
       ref={inputRef}
       className={className}
       type="file"
-      name={name}
       accept=".pdf"
       multiple
       onChange={(event) => {
-        const count = Array.from(event.currentTarget.files ?? []).filter((file) =>
+        const files = Array.from(event.currentTarget.files ?? []).filter((file) =>
           file.name.toLowerCase().endsWith(".pdf")
-        ).length;
-        onFileCountChange(count);
+        ) as FileWithRelativePath[];
+        onFilesChange(files);
       }}
     />
   );
@@ -413,27 +431,102 @@ function EditableResultsTable({ initialRows }: { initialRows: ReportRow[] }) {
 }
 
 export default function SkiReportTool() {
-  const [rawState, formAction] = useActionState(runSkiReport, initialSkiReportState);
-  const [selectedInvoiceCount, setSelectedInvoiceCount] = useState(0);
-  const [selectedFolderInvoiceCount, setSelectedFolderInvoiceCount] = useState(0);
+  const [rawState, setState] = useState<SkiReportState>(initialSkiReportState);
+  const [selectedInvoiceFiles, setSelectedInvoiceFiles] = useState<FileWithRelativePath[]>([]);
+  const [selectedFolderFiles, setSelectedFolderFiles] = useState<FileWithRelativePath[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [clientStatus, setClientStatus] = useState("");
   const state: SkiReportState = {
     ...initialSkiReportState,
-    ...(rawState ?? {}),
-    invoices: rawState?.invoices ?? initialSkiReportState.invoices,
-    metadataCacheJson: rawState?.metadataCacheJson ?? initialSkiReportState.metadataCacheJson,
-    metadataDebug: rawState?.metadataDebug ?? initialSkiReportState.metadataDebug,
-    metadataSourceLabel:
-      rawState?.metadataSourceLabel ?? initialSkiReportState.metadataSourceLabel,
-    metadataSourceType:
-      rawState?.metadataSourceType ?? initialSkiReportState.metadataSourceType,
-    rows: rawState?.rows ?? initialSkiReportState.rows,
+    ...rawState,
   };
   const rows = state?.rows ?? [];
   const error = state?.error ?? "";
   const rowsSignature = rows
     .map((row) => `${row.sourceFileName}-${row.itemNumber}-${row.quantity}-${row.lineTotal}`)
     .join("|");
+  const selectedInvoiceCount = selectedInvoiceFiles.length;
+  const selectedFolderInvoiceCount = selectedFolderFiles.length;
   const totalSelected = selectedInvoiceCount + selectedFolderInvoiceCount;
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const selectedFiles = [...selectedInvoiceFiles, ...selectedFolderFiles].filter((file) =>
+      file.name.toLowerCase().endsWith(".pdf")
+    );
+
+    if (!selectedFiles.length) {
+      setState({
+        ...initialSkiReportState,
+        error: "Upload mindst én PDF-faktura for at køre testen.",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setClientStatus("Uploader PDF-filer til Supabase...");
+
+    const supabase = createSupabaseClient();
+    const uploadedPaths: string[] = [];
+
+    try {
+      const batchId = crypto.randomUUID();
+      let uploadedCount = 0;
+
+      const batchUploadedPaths = await mapInBatches(selectedFiles, 6, async (file, index) => {
+        const storagePath = getStoragePathForInvoice(
+          batchId,
+          file.name,
+          file.webkitRelativePath
+        );
+        setClientStatus(`Uploader ${Math.min(index + 1, selectedFiles.length)}/${selectedFiles.length}: ${file.name}`);
+
+        const { error: uploadError } = await supabase.storage
+          .from(SKI_UPLOAD_BUCKET)
+          .upload(storagePath, file, {
+            cacheControl: "3600",
+            upsert: false,
+            contentType: file.type || "application/pdf",
+          });
+
+        if (uploadError) {
+          throw new Error(
+            `Upload til Supabase fejlede for ${file.name}. Tjek at bucketen '${SKI_UPLOAD_BUCKET}' findes, og at loggede medarbejdere må uploade til den.`
+          );
+        }
+
+        uploadedCount += 1;
+        setClientStatus(`Uploader ${uploadedCount}/${selectedFiles.length} PDF-filer...`);
+        return storagePath;
+      });
+      uploadedPaths.push(...batchUploadedPaths);
+
+      setClientStatus("Behandler fakturaer...");
+
+      const formData = new FormData();
+      formData.set("uploadedPaths", JSON.stringify(uploadedPaths));
+
+      const nextState = await processSkiReport(formData);
+      setState(nextState);
+      setClientStatus("");
+    } catch (error) {
+      if (uploadedPaths.length) {
+        await supabase.storage.from(SKI_UPLOAD_BUCKET).remove(uploadedPaths);
+      }
+
+      setState({
+        ...initialSkiReportState,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Noget gik galt under uploaden til Supabase.",
+      });
+      setClientStatus("");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <div className={styles.stack}>
@@ -451,17 +544,16 @@ export default function SkiReportTool() {
           eksportere kun den måned som CSV.
         </p>
 
-        <form action={formAction} className={styles.form}>
+        <form className={styles.form} onSubmit={handleSubmit}>
           <label className={styles.field}>
             <span className={styles.label}>Fakturaer (.pdf, flere filer er tilladt)</span>
             <input
               className={styles.input}
               type="file"
-              name="invoices"
               accept=".pdf"
               multiple
               onChange={(event) => {
-                setSelectedInvoiceCount(event.currentTarget.files?.length ?? 0);
+                setSelectedInvoiceFiles(Array.from(event.currentTarget.files ?? []) as FileWithRelativePath[]);
               }}
             />
             {selectedInvoiceCount ? (
@@ -475,8 +567,7 @@ export default function SkiReportTool() {
             <span className={styles.label}>Eller vælg en hel mappe med PDF&apos;er</span>
             <FolderInput
               className={styles.input}
-              name="invoices"
-              onFileCountChange={setSelectedFolderInvoiceCount}
+              onFilesChange={setSelectedFolderFiles}
             />
             {selectedFolderInvoiceCount ? (
               <span className={styles.helperText}>
@@ -492,9 +583,10 @@ export default function SkiReportTool() {
               Valgte PDF-filer i alt: <strong>{totalSelected}</strong>
             </span>
           ) : null}
+          {clientStatus ? <span className={styles.helperText}>{clientStatus}</span> : null}
 
           <div className={styles.actions}>
-            <SubmitButton />
+            <SubmitButton pending={isSubmitting} />
           </div>
         </form>
 
