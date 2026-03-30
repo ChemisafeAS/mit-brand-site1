@@ -138,6 +138,22 @@ export default async function MedarbejderPage({
         </article>
 
         <article className={styles.card}>
+          <h2 className={styles.cardTitle}>SKI-indberetning</h2>
+          <p className={styles.cardText}>
+            Upload metadata-arket og månedens fakturaer, og få et testbart
+            indberetningsudtræk med automatisk match mod EAN og SKI-data.
+          </p>
+          <div className={styles.linkList}>
+            <Link className={styles.linkItem} href="/medarbejder/ski-indberetning">
+              <span className={styles.linkLabel}>Åbn SKI-værktøj</span>
+              <p className={styles.linkText}>
+                Kør den første version af faktura-flowet direkte i medarbejderområdet.
+              </p>
+            </Link>
+          </div>
+        </article>
+
+        <article className={styles.card}>
           <h2 className={styles.cardTitle}>Status</h2>
           <p className={styles.cardText}>
             Den offentlige produktside læser kataloget fra{" "}

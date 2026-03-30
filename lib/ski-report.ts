@@ -1,0 +1,1095 @@
+import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { promisify } from "node:util";
+import { inflateSync } from "node:zlib";
+
+const execFileAsync = promisify(execFile);
+
+const OUTPUT_HEADERS = [
+  "SKIkundenr",
+  "Kundenavn",
+  "Adresse",
+  "Varenr",
+  "Varenavn",
+  "Varegruppe",
+  "Fakturanr",
+  "Antal",
+  "Enhed",
+  "Linietotal",
+  "Valuta",
+  "Fakturadato",
+  "SKIRammekontrakt",
+  "SKIIndrapporteringskode",
+  "Enhedspris",
+  "Datoformat",
+] as const;
+
+export type SkiMetadataRow = {
+  searchName: string;
+  customerName: string;
+  address1: string;
+  address2: string;
+  ean: string;
+  skiReportingCode: string;
+  itemNumber: string;
+  itemName: string;
+  itemGroup: string;
+  contract: string;
+  unitPrice: string;
+  unit: string;
+};
+
+export type MetadataWorkbookParseResult = {
+  debug: string;
+  rows: SkiMetadataRow[];
+  selectedSheetName: string;
+  sheetNames: string[];
+};
+
+export type ParsedInvoiceLine = {
+  description: string;
+  itemGroup: string;
+  itemNumber: string;
+  lineTotal: number;
+  quantity: number;
+  rawQuantity: string;
+  skiId: string;
+  unit: string;
+  unitPrice: number;
+};
+
+export type ParsedInvoice = {
+  customerRaw: string;
+  dateIso: string;
+  dateLabel: string;
+  dateNumeric: string;
+  debtorAddress: string;
+  debtorAddressCandidates: string[];
+  deliveryAddress: string;
+  deliveryCity: string;
+  fileName: string;
+  invoiceNumber: string;
+  lines: ParsedInvoiceLine[];
+  lookupCandidates: string[];
+  reference: string;
+  sourceText: string;
+};
+
+export type ReportRow = {
+  address: string;
+  customerName: string;
+  dateFormat: string;
+  ean: string;
+  fakturaDato: string;
+  fakturaNr: string;
+  itemGroup: string;
+  itemName: string;
+  itemNumber: string;
+  lineTotal: string;
+  lookupKey: string;
+  quantity: string;
+  skiContract: string;
+  skiReportingCode: string;
+  sourceFileName: string;
+  status: "matched" | "review";
+  statusMessage: string;
+  unit: string;
+  unitPrice: string;
+  valuta: string;
+};
+
+function aggregateInvoiceLines(lines: ParsedInvoiceLine[]) {
+  const grouped = new Map<string, ParsedInvoiceLine>();
+
+  for (const line of lines) {
+    const key = [line.itemNumber, line.skiId, line.unit].join("|");
+    const existing = grouped.get(key);
+
+    if (!existing) {
+      grouped.set(key, { ...line });
+      continue;
+    }
+
+    existing.lineTotal += line.lineTotal;
+    existing.quantity += line.quantity;
+  }
+
+  return Array.from(grouped.values());
+}
+
+type CellValueMap = Map<string, string>;
+
+function normalizeWhitespace(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function normalizeLookupValue(value: string) {
+  return normalizeWhitespace(value)
+    .toLocaleLowerCase("da-DK")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function decodeXml(value: string) {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function escapeCsv(value: string) {
+  if (/[;"\n]/.test(value)) {
+    return `"${value.replaceAll('"', '""')}"`;
+  }
+
+  return value;
+}
+
+function toDecimalString(value: number, fractionDigits = 2) {
+  return new Intl.NumberFormat("da-DK", {
+    maximumFractionDigits: fractionDigits,
+    minimumFractionDigits: fractionDigits,
+    useGrouping: true,
+  }).format(value);
+}
+
+function parseDanishNumber(value: string) {
+  const cleaned = value.replace(/\./g, "").replace(",", ".").trim();
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatDateNumeric(dateIso: string) {
+  const [year, month, day] = dateIso.split("-");
+  return String(Number(`${day}${month}${year.slice(-2)}`));
+}
+
+function titleCaseCity(value: string) {
+  return value
+    .toLocaleLowerCase("da-DK")
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toLocaleUpperCase("da-DK") + segment.slice(1))
+    .join(" ");
+}
+
+async function readZipEntry(zipPath: string, entryPath: string) {
+  const { stdout } = await execFileAsync("unzip", ["-p", zipPath, entryPath], {
+    encoding: "utf8",
+    maxBuffer: 20 * 1024 * 1024,
+  });
+  return stdout;
+}
+
+function getSharedStrings(xml: string) {
+  const strings: string[] = [];
+  const matches = xml.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g);
+
+  for (const match of matches) {
+    const text = Array.from(match[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g))
+      .map((textMatch) => decodeXml(textMatch[1]))
+      .join("");
+    strings.push(text);
+  }
+
+  return strings;
+}
+
+function getSheetTargets(workbookXml: string, relsXml: string) {
+  const relations = Array.from(
+    relsXml.matchAll(/<Relationship\b[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g)
+  );
+
+  return Array.from(
+    workbookXml.matchAll(/<sheet\b[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"/g)
+  ).map((match) => {
+    const relationMatch = relations.find((relation) => relation[1] === match[2]);
+
+    if (!relationMatch) {
+      return null;
+    }
+
+    return {
+      name: match[1],
+      target: relationMatch[2].startsWith("xl/")
+        ? relationMatch[2]
+        : `xl/${relationMatch[2].replace(/^\/+/, "")}`,
+    };
+  }).filter((value): value is { name: string; target: string } => Boolean(value));
+}
+
+function getCellValues(sheetXml: string, sharedStrings: string[]) {
+  const rows = new Map<number, CellValueMap>();
+  let fallbackRowNumber = 0;
+
+  for (const rowMatch of sheetXml.matchAll(/<row\b([^>]*)>([\s\S]*?)<\/row>/g)) {
+    const rowAttributes = rowMatch[1];
+    const explicitRowNumber = rowAttributes.match(/\br="(\d+)"/);
+    const rowNumber = explicitRowNumber ? Number(explicitRowNumber[1]) : fallbackRowNumber + 1;
+    fallbackRowNumber = rowNumber;
+    const cellMap: CellValueMap = new Map();
+
+    for (const cellMatch of rowMatch[2].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+      const attrs = cellMatch[1];
+      const body = cellMatch[2] ?? "";
+      const refMatch = attrs.match(/\br="([A-Z]+\d+)"/);
+
+      if (!refMatch) {
+        continue;
+      }
+
+      const typeMatch = attrs.match(/\bt="([^"]+)"/);
+      const valueMatch = body.match(/<v\b[^>]*>([\s\S]*?)<\/v>/);
+      const textMatches = Array.from(body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)).map((match) =>
+        decodeXml(match[1])
+      );
+
+      let value = "";
+
+      if (typeMatch?.[1] === "s" && valueMatch) {
+        value = sharedStrings[Number(valueMatch[1])] ?? "";
+      } else if (textMatches.length) {
+        value = textMatches.join("");
+      } else if (valueMatch) {
+        value = decodeXml(valueMatch[1]);
+      }
+
+      cellMap.set(refMatch[1], normalizeWhitespace(value));
+    }
+
+    rows.set(rowNumber, cellMap);
+  }
+
+  return rows;
+}
+
+function getCell(cellMap: CellValueMap, column: string) {
+  return cellMap.get(`${column}`) ?? "";
+}
+
+function getColumnLetters(cellRef: string) {
+  const match = cellRef.match(/^([A-Z]+)/);
+  return match?.[1] ?? "";
+}
+
+function looksLikeMetadataSheet(rows: Map<number, CellValueMap>) {
+  for (const rowNumber of [1, 2, 3, 4, 5]) {
+    const row = rows.get(rowNumber);
+
+    if (!row) {
+      continue;
+    }
+
+    const firstColumns = ["A", "B", "C", "D", "E", "F"]
+      .map((column) => normalizeLookupValue(getCell(row, column)))
+      .filter(Boolean);
+
+    const hasSearchName = firstColumns.some((value) => value.includes("sogenavn"));
+    const hasCustomerName = firstColumns.some((value) => value === "navn" || value.includes("kundenavn"));
+    const hasAddress = firstColumns.some((value) => value.includes("adresse"));
+
+    if ((hasSearchName && hasCustomerName) || (hasCustomerName && hasAddress)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isMetadataHeaderRow(cellMap: CellValueMap) {
+  const firstColumns = ["A", "B", "C", "D", "E", "F"]
+    .map((column) => normalizeLookupValue(getCell(cellMap, column)))
+    .filter(Boolean);
+
+  const hasSearchName = firstColumns.some((value) => value.includes("sogenavn"));
+  const hasCustomerName = firstColumns.some((value) => value === "navn" || value.includes("kundenavn"));
+  const hasAddress = firstColumns.some((value) => value.includes("adresse"));
+
+  return (hasSearchName && hasCustomerName) || (hasCustomerName && hasAddress);
+}
+
+function findHeaderColumns(rows: Map<number, CellValueMap>) {
+  for (const [, cellMap] of rows) {
+    if (!isMetadataHeaderRow(cellMap)) {
+      continue;
+    }
+
+    const headerMap = new Map<string, string>();
+
+    for (const [cellRef, value] of cellMap.entries()) {
+      headerMap.set(normalizeLookupValue(value), getColumnLetters(cellRef));
+    }
+
+    return headerMap;
+  }
+
+  return new Map<string, string>();
+}
+
+function getCellByHeader(
+  cellMap: CellValueMap,
+  headerColumns: Map<string, string>,
+  ...headerCandidates: string[]
+) {
+  for (const candidate of headerCandidates) {
+    const column = headerColumns.get(normalizeLookupValue(candidate));
+
+    if (column) {
+      return getCell(cellMap, column);
+    }
+  }
+
+  return "";
+}
+
+function summarizeSheetRow(row: CellValueMap | undefined) {
+  if (!row) {
+    return "(ingen række)";
+  }
+
+  return ["A", "B", "C", "D", "E", "F"]
+    .map((column) => getCell(row, column))
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function summarizeFirstNonEmptyRows(rows: Map<number, CellValueMap>, limit = 3) {
+  const previews: string[] = [];
+
+  for (const [rowNumber, row] of rows) {
+    const summary = summarizeSheetRow(row);
+
+    if (!summary || summary === "(ingen række)") {
+      continue;
+    }
+
+    previews.push(`Række ${rowNumber}: ${summary}`);
+
+    if (previews.length >= limit) {
+      break;
+    }
+  }
+
+  return previews.join(" || ") || "(ingen ikke-tomme rækker fundet)";
+}
+
+export async function parseMetadataWorkbook(file: File): Promise<MetadataWorkbookParseResult> {
+  const tempPath = path.join("/tmp", `${randomUUID()}-${file.name}`);
+  await fs.writeFile(tempPath, Buffer.from(await file.arrayBuffer()));
+
+  try {
+    const workbookXml = await readZipEntry(tempPath, "xl/workbook.xml");
+    const relsXml = await readZipEntry(tempPath, "xl/_rels/workbook.xml.rels");
+    const sharedStringsXml = await readZipEntry(tempPath, "xl/sharedStrings.xml").catch(
+      () => ""
+    );
+    const sharedStrings = sharedStringsXml ? getSharedStrings(sharedStringsXml) : [];
+    const sheetTargets = getSheetTargets(workbookXml, relsXml);
+    const sheetNames = sheetTargets.map((sheet) => sheet.name);
+    const preferredMetadataSheet = sheetTargets.find(
+      (sheet) => normalizeLookupValue(sheet.name) === "metadata"
+    );
+
+    let rows = new Map<number, CellValueMap>();
+    let selectedSheetName = "";
+    const debugParts = [`Faner fundet: ${sheetNames.join(", ") || "(ingen faner)"}`];
+
+    if (preferredMetadataSheet) {
+      const metadataXml = await readZipEntry(tempPath, preferredMetadataSheet.target);
+      rows = getCellValues(metadataXml, sharedStrings);
+      selectedSheetName = preferredMetadataSheet.name;
+      debugParts.push(
+        `Foretrukken metadata-fane: ${preferredMetadataSheet.name}; header-preview: ${summarizeSheetRow(
+          rows.get(1)
+        )}; første rækker: ${summarizeFirstNonEmptyRows(rows)}`
+      );
+    }
+
+    if (!looksLikeMetadataSheet(rows)) {
+      for (const sheet of sheetTargets) {
+        const sheetXml = await readZipEntry(tempPath, sheet.target);
+        const candidateRows = getCellValues(sheetXml, sharedStrings);
+        debugParts.push(
+          `Tjekkede fane ${sheet.name}; header-preview: ${summarizeSheetRow(
+            candidateRows.get(1)
+          )}; første rækker: ${summarizeFirstNonEmptyRows(candidateRows)}`
+        );
+
+        if (looksLikeMetadataSheet(candidateRows)) {
+          rows = candidateRows;
+          selectedSheetName = sheet.name;
+          break;
+        }
+      }
+    }
+
+    const parsedRows: SkiMetadataRow[] = [];
+    const headerColumns = findHeaderColumns(rows);
+
+    for (const [, cellMap] of rows) {
+      if (isMetadataHeaderRow(cellMap)) {
+        continue;
+      }
+
+      const searchName = getCellByHeader(cellMap, headerColumns, "Søgenavn");
+      const customerName = getCellByHeader(cellMap, headerColumns, "Navn", "Kundenavn");
+      const address1 = getCellByHeader(cellMap, headerColumns, "Adresse 1", "Adresse");
+      const address2 = getCellByHeader(cellMap, headerColumns, "Adresse 2");
+      const ean = getCellByHeader(cellMap, headerColumns, "EAN Nummer", "SKIkundenr");
+      const skiReportingCode = getCellByHeader(
+        cellMap,
+        headerColumns,
+        "Skiindrapporteringskode",
+        "SKIIndrapporteringskode"
+      );
+      const itemNumber = getCellByHeader(cellMap, headerColumns, "Varenummer", "Varenr");
+      const itemName = getCellByHeader(cellMap, headerColumns, "Varenavn");
+      const itemGroup = getCellByHeader(cellMap, headerColumns, "Varegruppe");
+      const contract = getCellByHeader(cellMap, headerColumns, "Delaftale", "SKIRammekontrakt");
+      const unitPrice = getCellByHeader(cellMap, headerColumns, "Enhedspris");
+      const unit = getCellByHeader(cellMap, headerColumns, "Enhed");
+
+      if (!searchName && !customerName && !itemNumber) {
+        continue;
+      }
+
+      parsedRows.push({
+        address1,
+        address2,
+        contract,
+        customerName,
+        ean,
+        itemGroup,
+        itemName,
+        itemNumber,
+        searchName,
+        skiReportingCode,
+        unit,
+        unitPrice,
+      });
+    }
+
+    debugParts.push(
+      `Valgt metadata-fane: ${selectedSheetName || "(ingen valgt)"}; metadata-rækker fundet: ${parsedRows.length}`
+    );
+
+    return {
+      debug: debugParts.join(" || "),
+      rows: parsedRows,
+      selectedSheetName,
+      sheetNames,
+    };
+  } finally {
+    await fs.unlink(tempPath).catch(() => undefined);
+  }
+}
+
+function extractPdfText(buffer: Buffer) {
+  const textChunks: string[] = [];
+  const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+
+  for (const match of buffer.toString("latin1").matchAll(streamRegex)) {
+    const chunk = match[1];
+    let inflated: string;
+
+    try {
+      inflated = inflateSync(Buffer.from(chunk, "latin1")).toString("latin1");
+    } catch {
+      continue;
+    }
+
+    if (!inflated.includes("BT")) {
+      continue;
+    }
+
+    let current = "";
+
+    for (let index = 0; index < inflated.length; index += 1) {
+      if (inflated[index] !== "(") {
+        continue;
+      }
+
+      index += 1;
+      let depth = 1;
+      let value = "";
+
+      while (index < inflated.length && depth > 0) {
+        const char = inflated[index];
+
+        if (char === "\\") {
+          const next = inflated[index + 1] ?? "";
+          const escapes: Record<string, string> = {
+            "\\": "\\",
+            "(": "(",
+            ")": ")",
+            n: "\n",
+            r: "\r",
+            t: "\t",
+            b: "\b",
+            f: "\f",
+          };
+          value += escapes[next] ?? next;
+          index += 2;
+          continue;
+        }
+
+        if (char === "(") {
+          depth += 1;
+          value += char;
+          index += 1;
+          continue;
+        }
+
+        if (char === ")") {
+          depth -= 1;
+
+          if (depth === 0) {
+            index += 1;
+            break;
+          }
+        }
+
+        value += char;
+        index += 1;
+      }
+
+      current += value;
+    }
+
+    if (/[A-Za-zÆØÅæøå]{3,}/.test(current)) {
+      textChunks.push(current);
+    }
+  }
+
+  return normalizeWhitespace(textChunks.join(" "));
+}
+
+function parseQuantity(rawQuantity: string) {
+  const compact = rawQuantity.replace(/\s+/g, "");
+
+  if (/^\d+x\d+[,.]?\d*$/i.test(compact)) {
+    const [, amount] = compact.split("x");
+    return parseDanishNumber(amount);
+  }
+
+  return parseDanishNumber(compact);
+}
+
+function normalizeInvoiceUnit(rawUnit: string, description: string, rawQuantity: string) {
+  const normalizedUnit = rawUnit.toLocaleLowerCase("da-DK").trim();
+  const normalizedDescription = normalizeLookupValue(description);
+  const compactQuantity = rawQuantity.replace(/\s+/g, "");
+
+  if (normalizedUnit === "ton") {
+    return "ton";
+  }
+
+  if (
+    normalizedUnit === "sække" ||
+    normalizedUnit === "stk" ||
+    normalizedUnit === "paller" ||
+    normalizedUnit === "palle(r)"
+  ) {
+    if (
+      normalizedDescription.includes("palle") ||
+      /^(\d+)x\d+(?:[.,]\d+)?$/i.test(compactQuantity) ||
+      normalizedUnit === "sække" ||
+      normalizedUnit === "paller" ||
+      normalizedUnit === "palle(r)"
+    ) {
+      return "Palle(r)";
+    }
+  }
+
+  return rawUnit;
+}
+
+function normalizeInvoiceQuantity(
+  rawQuantity: string,
+  normalizedUnit: string,
+  lineTotal: number,
+  unitPrice: number
+) {
+  const compact = rawQuantity.replace(/\s+/g, "");
+  const palletMatch = compact.match(/^(\d+)x\d+(?:[.,]\d+)?$/i);
+
+  if (normalizedUnit === "Palle(r)" && palletMatch) {
+    return parseDanishNumber(palletMatch[1]);
+  }
+
+  if (normalizedUnit === "ton" && lineTotal > 0 && unitPrice > 0) {
+    return Number((lineTotal / unitPrice).toFixed(3));
+  }
+
+  return parseQuantity(rawQuantity);
+}
+
+function shouldExcludeInvoiceLine(description: string) {
+  const normalizedDescription = normalizeLookupValue(description);
+
+  return (
+    normalizedDescription.includes("stikprove") ||
+    normalizedDescription.includes("stikprover") ||
+    normalizedDescription.includes("hastleverance") ||
+    normalizedDescription.includes("hasteleverance")
+  );
+}
+
+function parseGenericInvoiceLines(text: string) {
+  const sanitizedText = text.replace(/\s+/g, " ");
+  const lineMatches = Array.from(
+    sanitizedText.matchAll(
+      /(\d+(?:[.,]\d+)?(?:x\d+(?:[.,]\d+)?)?)\s*(ton|sække|stk|palle\(r\)|paller|kg)\s*(.*?)\s*kr\s*([\d.,]+)\s*kr\s*([\d.]+,\d{2})/gi
+    )
+  );
+
+  return lineMatches
+    .map((match) => {
+      const rawQuantity = normalizeWhitespace(match[1]);
+      const rawUnit = normalizeWhitespace(match[2]);
+      const description = normalizeWhitespace(match[3]);
+      const unitPrice = parseDanishNumber(match[4]);
+      const lineTotal = parseDanishNumber(match[5]);
+      const unit = normalizeInvoiceUnit(rawUnit, description, rawQuantity);
+      const quantity = normalizeInvoiceQuantity(rawQuantity, unit, lineTotal, unitPrice);
+
+      return {
+        description,
+        itemGroup: "",
+        itemNumber: "",
+        lineTotal,
+        quantity,
+        rawQuantity,
+        skiId: "",
+        unit,
+        unitPrice,
+      } satisfies ParsedInvoiceLine;
+    })
+    .filter(
+      (line) =>
+        line.quantity > 0 &&
+        line.lineTotal > 0 &&
+        !shouldExcludeInvoiceLine(line.description) &&
+        !normalizeLookupValue(line.description).includes("palle")
+    );
+}
+
+function parseInvoiceLines(text: string) {
+  const blockDelimiter = "<<<LINE_END>>>";
+  const sanitizedText = text
+    .replace(
+      /UNSPSC:\s*\d{8}(\d{1,3},\d{3}\s*(?:ton|sække|stk|palle\(r\)|paller|kg))/gi,
+      `${blockDelimiter}$1`
+    )
+    .replace(/UNSPSC:\s*\d+/gi, blockDelimiter)
+    .replace(/Overførtkr[\d.,]+/gi, `${blockDelimiter} `)
+    .replace(/\s+/g, " ");
+
+  const rawBlocks = sanitizedText
+    .split(blockDelimiter)
+    .map((block) => normalizeWhitespace(block))
+    .filter(Boolean);
+
+  const structuredLines = rawBlocks
+    .map((block) => {
+      const match =
+        block.match(
+        /(\d+(?:[.,]\d+)?(?:x\d+(?:[.,]\d+)?)?)\s*(ton|sække|stk|palle\(r\)|paller|kg)\s*(.*?)\s*kr\s*([\d.,]+)\s*kr\s*([\d.]+,\d{2}).*?Varenummer:\s*(\d+)\s*SKI ID:\s*([A-Z0-9-]+)/i
+        ) ??
+        block.match(
+          /(\d+(?:[.,]\d+)?(?:x\d+(?:[.,]\d+)?)?)\s*(ton|sække|stk|palle\(r\)|paller|kg)\s*(.*?)\s*kr\s*([\d.,]+)\s*kr\s*Vejeseddelnr\.\s*:\s*[A-Z0-9-]+.*?Varenummer:\s*(\d+)\s*SKI ID:\s*([A-Z0-9-]+)/i
+        );
+
+      if (!match) {
+        return null;
+      }
+
+      const rawQuantity = normalizeWhitespace(match[1]);
+      const rawUnit = normalizeWhitespace(match[2]);
+      const description = normalizeWhitespace(match[3])
+        .replace(/Vejeseddelnr\.\s*:\s*[A-Z0-9-]+/gi, "")
+        .trim();
+      const unitPrice = parseDanishNumber(match[4]);
+      const hasExplicitLineTotal = match.length >= 8;
+      const lineTotal = hasExplicitLineTotal ? parseDanishNumber(match[5]) : 0;
+      const itemNumber = hasExplicitLineTotal ? match[6] : match[5];
+      const skiId = hasExplicitLineTotal ? match[7] : match[6];
+      const unit = normalizeInvoiceUnit(rawUnit, description, rawQuantity);
+      const quantity = normalizeInvoiceQuantity(rawQuantity, unit, lineTotal, unitPrice);
+
+      return {
+        description,
+        itemGroup: skiId,
+        itemNumber,
+        lineTotal,
+        quantity,
+        rawQuantity,
+        skiId,
+        unit,
+        unitPrice,
+      } satisfies ParsedInvoiceLine;
+    })
+    .filter(
+      (line): line is ParsedInvoiceLine =>
+        Boolean(
+          line &&
+            line.itemNumber &&
+            line.quantity > 0 &&
+            !shouldExcludeInvoiceLine(line.description)
+        )
+    );
+
+  if (structuredLines.length) {
+    return structuredLines;
+  }
+
+  return parseGenericInvoiceLines(text);
+}
+
+function parseDeliveryAddress(text: string) {
+  const match = text.match(/Leveringsadresse\s*(.*?)\s*KvantumEnhedBeskrivelseEnhedsprisI ALT/i);
+  const raw = normalizeWhitespace(match?.[1] ?? "");
+  const cityMatch = raw.match(/(\d{4})\s+([A-Za-zÆØÅæøå][A-Za-zÆØÅæøå\s-]+)/);
+  const deliveryCity = cityMatch ? titleCaseCity(normalizeWhitespace(cityMatch[2])) : "";
+
+  return {
+    deliveryAddress: raw,
+    deliveryCity,
+  };
+}
+
+function looksLikeStreetAddress(value: string) {
+  return /\d/.test(value) && /[A-Za-zÆØÅæøå]/.test(value);
+}
+
+function looksLikePostalLine(value: string) {
+  return /\b\d{4}\s+[A-Za-zÆØÅæøå]/.test(value);
+}
+
+function parseDebtorAddress(text: string) {
+  const blockBeforeNumber = normalizeWhitespace(text.match(/FAKTURA(.*?)Nummer:\.*/i)?.[1] ?? "");
+  const blockBeforeDate = normalizeWhitespace(
+    text.match(/Nummer:\.*\s*\d+(.*?)Dato:\.*/i)?.[1] ?? ""
+  );
+  const blockBeforeAccount = normalizeWhitespace(
+    text.match(/Dato:\.*\s*\d{2}\/\d{2}-\d{2}(.*?)Konto:\.*/i)?.[1] ?? ""
+  );
+
+  const rawBlocks = [blockBeforeNumber, blockBeforeDate, blockBeforeAccount].filter(Boolean);
+  const candidates = new Set<string>();
+
+  for (const block of rawBlocks) {
+    if (looksLikeStreetAddress(block) || looksLikePostalLine(block)) {
+      candidates.add(block);
+    }
+  }
+
+  const streetLine = rawBlocks.find((block) => looksLikeStreetAddress(block));
+  const postalLine = rawBlocks.find((block) => looksLikePostalLine(block));
+
+  if (streetLine && postalLine) {
+    candidates.add(`${streetLine} ${postalLine}`);
+  }
+
+  if (!candidates.size && rawBlocks.length) {
+    candidates.add(rawBlocks.join(" "));
+  }
+
+  const debtorAddressCandidates = Array.from(candidates).map((value) => normalizeWhitespace(value));
+
+  return {
+    debtorAddress: debtorAddressCandidates[0] ?? "",
+    debtorAddressCandidates,
+  };
+}
+
+function parseCustomerRaw(text: string) {
+  const customerMatch = text.match(/^(.*?)FAKTURA/i);
+  const rawCustomer = normalizeWhitespace(customerMatch?.[1] ?? "");
+
+  return normalizeWhitespace(
+    rawCustomer
+      .replace(/^EAN\s*:?\s*\d{8,20}\s*/i, "")
+      .replace(/^\d{8,20}\s*/i, "")
+  );
+}
+
+function parseDate(text: string) {
+  const dateMatch = text.match(/Dato:\.*\s*(\d{2})\/(\d{2})-(\d{2})/i);
+
+  if (!dateMatch) {
+    return {
+      dateIso: "",
+      dateLabel: "",
+      dateNumeric: "",
+    };
+  }
+
+  const [, day, month, year] = dateMatch;
+  const dateIso = `20${year}-${month}-${day}`;
+
+  return {
+    dateIso,
+    dateLabel: `${day}/${month}-${year}`,
+    dateNumeric: formatDateNumeric(dateIso),
+  };
+}
+
+function buildLookupCandidates(
+  customerRaw: string,
+  debtorAddress: string,
+  deliveryAddress: string,
+  deliveryCity: string
+) {
+  const candidates = new Set<string>();
+  const normalizedCustomer = normalizeWhitespace(customerRaw);
+  const normalizedDebtorAddress = normalizeWhitespace(debtorAddress);
+  const isVejdirektoratet = /^Vejdirektoratet$/i.test(normalizedCustomer);
+
+  if (normalizedCustomer) {
+    candidates.add(normalizedCustomer);
+  }
+
+  if (!isVejdirektoratet && normalizedCustomer && normalizedDebtorAddress) {
+    candidates.add(`${normalizedCustomer} ${normalizedDebtorAddress}`);
+  }
+
+  if (isVejdirektoratet && deliveryCity) {
+    candidates.add(`Vejdirektoratet ${deliveryCity}`);
+  }
+
+  if (isVejdirektoratet && deliveryAddress) {
+    candidates.add(`${normalizedCustomer} ${deliveryAddress}`);
+  }
+
+  return Array.from(candidates);
+}
+
+function addressMatchesMetadata(debtorAddressCandidates: string[], row: SkiMetadataRow) {
+  const rowAddress1 = normalizeLookupValue(row.address1);
+  const rowAddress2 = normalizeLookupValue(row.address2);
+  const normalizedCandidates = debtorAddressCandidates
+    .map((value) => normalizeLookupValue(value))
+    .filter(Boolean);
+
+  if (!normalizedCandidates.length) {
+    return false;
+  }
+
+  return normalizedCandidates.some(
+    (candidate) =>
+      (rowAddress1 && (candidate.includes(rowAddress1) || rowAddress1.includes(candidate))) ||
+      (rowAddress2 && (candidate.includes(rowAddress2) || rowAddress2.includes(candidate)))
+  );
+}
+
+export async function parseInvoicePdf(file: File) {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const sourceText = extractPdfText(buffer);
+  const customerRaw = parseCustomerRaw(sourceText);
+  const { dateIso, dateLabel, dateNumeric } = parseDate(sourceText);
+  const { debtorAddress, debtorAddressCandidates } = parseDebtorAddress(sourceText);
+  const { deliveryAddress, deliveryCity } = parseDeliveryAddress(sourceText);
+  const invoiceNumberMatch = sourceText.match(/Nummer:\.*\s*(\d+)/i);
+  const referenceMatch = sourceText.match(/Deres ref:\.*\s*([A-Za-z0-9-]+)/i);
+  const lines = parseInvoiceLines(sourceText);
+
+  return {
+    customerRaw,
+    dateIso,
+    dateLabel,
+    dateNumeric,
+    debtorAddress,
+    debtorAddressCandidates,
+    deliveryAddress,
+    deliveryCity,
+    fileName: file.name,
+    invoiceNumber: invoiceNumberMatch?.[1] ?? "",
+    lines,
+    lookupCandidates: buildLookupCandidates(
+      customerRaw,
+      debtorAddress,
+      deliveryAddress,
+      deliveryCity
+    ),
+    reference: referenceMatch?.[1] ?? "",
+    sourceText,
+  } satisfies ParsedInvoice;
+}
+
+function findMetadataMatch(invoice: ParsedInvoice, metadataRows: SkiMetadataRow[], line: ParsedInvoiceLine) {
+  const normalizedCustomerName = normalizeLookupValue(invoice.customerRaw);
+
+  const directMatch = metadataRows.find((row) => {
+    if (normalizeLookupValue(row.customerName) !== normalizedCustomerName) {
+      return false;
+    }
+
+    if (row.itemNumber && line.itemNumber && row.itemNumber !== line.itemNumber) {
+      return false;
+    }
+
+    return addressMatchesMetadata(invoice.debtorAddressCandidates, row);
+  });
+
+  if (directMatch) {
+    return {
+      lookupKey: `${invoice.customerRaw} + debitoradresse`,
+      row: directMatch,
+    };
+  }
+
+  if (/^Vejdirektoratet$/i.test(invoice.customerRaw)) {
+    const metadataBySearch = new Map<string, SkiMetadataRow[]>();
+
+    for (const row of metadataRows) {
+      const key = normalizeLookupValue(row.searchName);
+      const existing = metadataBySearch.get(key) ?? [];
+      existing.push(row);
+      metadataBySearch.set(key, existing);
+    }
+
+    for (const candidate of invoice.lookupCandidates) {
+      const candidates = metadataBySearch.get(normalizeLookupValue(candidate));
+
+      if (!candidates?.length) {
+        continue;
+      }
+
+      const itemMatch = candidates.find((row) => row.itemNumber === line.itemNumber);
+      return {
+        lookupKey: candidate,
+        row: itemMatch ?? candidates[0],
+      };
+    }
+  }
+
+  return null;
+}
+
+export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: ParsedInvoice[]) {
+  return invoices.flatMap((invoice) => {
+    const invoiceLines = aggregateInvoiceLines(invoice.lines);
+
+    if (!invoiceLines.length) {
+      return [
+        {
+          address: invoice.debtorAddress,
+          customerName: invoice.customerRaw,
+          dateFormat: invoice.dateIso,
+          ean: "",
+          fakturaDato: invoice.dateNumeric,
+          fakturaNr: invoice.invoiceNumber,
+          itemGroup: "",
+          itemName: "",
+          itemNumber: "",
+          lineTotal: "",
+          lookupKey: invoice.lookupCandidates[0] ?? invoice.customerRaw,
+          quantity: "",
+          skiContract: "",
+          skiReportingCode: "",
+          sourceFileName: invoice.fileName,
+          status: "review",
+          statusMessage: "Ingen varelinjer med Varenummer/SKI ID blev fundet i PDF'en.",
+          unit: "",
+          unitPrice: "",
+          valuta: "DKK",
+        } satisfies ReportRow,
+      ];
+    }
+
+    return invoiceLines.map((line) => {
+      const metadataMatch = findMetadataMatch(invoice, metadataRows, line);
+
+      if (!metadataMatch) {
+        return {
+          address: invoice.debtorAddress,
+          customerName: invoice.customerRaw,
+          dateFormat: invoice.dateIso,
+          ean: "",
+          fakturaDato: invoice.dateNumeric,
+          fakturaNr: invoice.invoiceNumber,
+          itemGroup: line.itemGroup,
+          itemName: line.description,
+          itemNumber: line.itemNumber,
+          lineTotal: toDecimalString(line.lineTotal),
+          lookupKey: invoice.lookupCandidates[0] ?? invoice.customerRaw,
+          quantity: toDecimalString(line.quantity, 2),
+          skiContract: "",
+          skiReportingCode: "",
+          sourceFileName: invoice.fileName,
+          status: "review",
+          statusMessage: "Ingen metadata-match fundet. Tjek søgenavn, kundealias eller adresse-regel.",
+          unit: line.unit,
+          unitPrice: toDecimalString(line.unitPrice),
+          valuta: "DKK",
+        } satisfies ReportRow;
+      }
+
+      const matched = metadataMatch.row;
+
+      return {
+        address: matched.address1 || invoice.debtorAddress,
+        customerName: matched.customerName || invoice.customerRaw,
+        dateFormat: invoice.dateIso,
+        ean: matched.ean,
+        fakturaDato: invoice.dateNumeric,
+        fakturaNr: invoice.invoiceNumber,
+        itemGroup: matched.itemGroup || line.itemGroup,
+        itemName: matched.itemName || line.description,
+        itemNumber: matched.itemNumber || line.itemNumber,
+        lineTotal: toDecimalString(line.lineTotal),
+        lookupKey: metadataMatch.lookupKey,
+        quantity: toDecimalString(line.quantity, 2),
+        skiContract: matched.contract,
+        skiReportingCode: matched.skiReportingCode,
+        sourceFileName: invoice.fileName,
+        status: matched.ean ? "matched" : "review",
+        statusMessage: matched.ean
+          ? "Matchet mod metadata."
+          : "Metadata-rækken mangler EAN eller andre nøglefelter.",
+        unit: matched.unit || line.unit,
+        unitPrice: matched.unitPrice || toDecimalString(line.unitPrice),
+        valuta: "DKK",
+      } satisfies ReportRow;
+    });
+  });
+}
+
+export function buildCsv(rows: ReportRow[]) {
+  const delimiter = ";";
+  const lines = [
+    OUTPUT_HEADERS.join(delimiter),
+    ...rows.map((row) =>
+      [
+        row.ean,
+        row.customerName,
+        row.address,
+        row.itemNumber,
+        row.itemName,
+        row.itemGroup,
+        row.fakturaNr,
+        row.quantity,
+        row.unit,
+        row.lineTotal,
+        row.valuta,
+        row.fakturaDato,
+        row.skiContract,
+        row.skiReportingCode,
+        row.unitPrice,
+        row.dateFormat,
+      ]
+        .map((value) => escapeCsv(value))
+        .join(delimiter)
+    ),
+  ];
+
+  return lines.join("\n");
+}

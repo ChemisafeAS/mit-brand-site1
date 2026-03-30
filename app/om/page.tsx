@@ -48,7 +48,7 @@ export default async function OmPage({ searchParams }: OmPageProps) {
       </section>
 
       <section className={styles.introGrid}>
-        <article className={styles.card}>
+        <article className={`${styles.card} ${styles.introCard}`}>
           {isEditing ? (
             <>
               <div className={styles.sectionTitle}>
@@ -107,7 +107,7 @@ export default async function OmPage({ searchParams }: OmPageProps) {
         </article>
 
         <aside className={styles.imageColumn}>
-          <div className={styles.imageCard}>
+          <div className={`${styles.imageCard} ${styles.introImageCard}`}>
             <Image
               src="/om-lager.png"
               alt="Læssemaskine og lastbiler i saltlager"
