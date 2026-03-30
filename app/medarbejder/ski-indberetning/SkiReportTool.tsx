@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient as createSupabaseClient } from "@/lib/supabase/client";
-import { getStoragePathForInvoice, SKI_UPLOAD_BUCKET } from "@/lib/ski-storage";
+import {
+  getStoragePathForInvoice,
+  sanitizeStorageSegment,
+  SKI_UPLOAD_BUCKET,
+} from "@/lib/ski-storage";
 import { processSkiReport } from "./actions";
 import { initialSkiReportState, type SkiReportState } from "./state";
 import styles from "./ski-report.module.css";
@@ -191,7 +195,13 @@ function FolderInput({
   );
 }
 
-function EditableResultsTable({ initialRows }: { initialRows: ReportRow[] }) {
+function ResultsWithInvoiceLinks({
+  initialRows,
+  fileLinks,
+}: {
+  initialRows: ReportRow[];
+  fileLinks: Map<string, string>;
+}) {
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [editableRows, setEditableRows] = useState(initialRows);
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
@@ -318,6 +328,7 @@ function EditableResultsTable({ initialRows }: { initialRows: ReportRow[] }) {
               );
               const rowId = `${row.sourceFileName}-${row.itemNumber}-${index}`;
               const isEditing = editingRowId === rowId;
+              const fileUrl = fileLinks.get(row.sourceFileName);
 
               return (
                 <tr key={rowId}>
@@ -330,7 +341,21 @@ function EditableResultsTable({ initialRows }: { initialRows: ReportRow[] }) {
                       {row.status === "matched" ? "Match" : "Review"}
                     </span>
                   </td>
-                  <td>{row.sourceFileName}</td>
+                  <td>
+                    <div className={styles.fileCell}>
+                      <span>{row.sourceFileName}</span>
+                      {fileUrl ? (
+                        <a
+                          className={styles.fileLink}
+                          href={fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Åbn PDF
+                        </a>
+                      ) : null}
+                    </div>
+                  </td>
                   <td>
                     {isEditing ? (
                       <input
@@ -448,13 +473,43 @@ export default function SkiReportTool() {
   const selectedInvoiceCount = selectedInvoiceFiles.length;
   const selectedFolderInvoiceCount = selectedFolderFiles.length;
   const totalSelected = selectedInvoiceCount + selectedFolderInvoiceCount;
+  const selectedFiles = useMemo(
+    () => [...selectedInvoiceFiles, ...selectedFolderFiles].filter((file) => file.name.toLowerCase().endsWith(".pdf")),
+    [selectedInvoiceFiles, selectedFolderFiles]
+  );
+  const fileLinks = useMemo(() => {
+    const links = new Map<string, string>();
+
+    for (const file of selectedFiles) {
+      const objectUrl = URL.createObjectURL(file);
+      const sanitizedFileName =
+        file.name
+          .split("/")
+          .map((segment) => sanitizeStorageSegment(segment) || "file")
+          .join("/") || file.name;
+
+      if (!links.has(file.name)) {
+        links.set(file.name, objectUrl);
+      }
+
+      if (!links.has(sanitizedFileName)) {
+        links.set(sanitizedFileName, objectUrl);
+      }
+    }
+
+    return links;
+  }, [selectedFiles]);
+
+  useEffect(() => {
+    return () => {
+      for (const url of new Set(fileLinks.values())) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, [fileLinks]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    const selectedFiles = [...selectedInvoiceFiles, ...selectedFolderFiles].filter((file) =>
-      file.name.toLowerCase().endsWith(".pdf")
-    );
 
     if (!selectedFiles.length) {
       setState({
@@ -599,7 +654,11 @@ export default function SkiReportTool() {
       <Summary state={state} />
 
       {rows.length ? (
-        <EditableResultsTable key={rowsSignature} initialRows={rows} />
+        <ResultsWithInvoiceLinks
+          key={rowsSignature}
+          initialRows={rows}
+          fileLinks={fileLinks}
+        />
       ) : null}
     </div>
   );

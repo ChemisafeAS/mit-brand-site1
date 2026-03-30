@@ -45,6 +45,23 @@
   color: rgba(255, 255, 255, 0.88);
 }
 
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 18px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  color: white;
+  font-weight: 700;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.backLink:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
 .heroBadge {
   padding: 14px 16px;
   border-radius: 999px;
@@ -395,6 +412,23 @@
   color: #0f172a;
   font-size: 14px;
   font: inherit;
+}
+
+.fileCell {
+  display: grid;
+  gap: 6px;
+}
+
+.fileLink {
+  width: fit-content;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.fileLink:hover {
+  text-decoration: underline;
 }
 
 .table th {

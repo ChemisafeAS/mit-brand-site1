@@ -75,6 +75,7 @@ export type ParsedInvoiceLine = {
 };
 
 export type ParsedInvoice = {
+  adjustedSubtotal: number;
   customerRaw: string;
   dateIso: string;
   dateLabel: string;
@@ -666,11 +667,17 @@ function normalizeInvoiceQuantity(
     return parseDanishNumber(palletMatch[1]);
   }
 
+  const parsedQuantity = parseQuantity(rawQuantity);
+
+  if (parsedQuantity > 0) {
+    return parsedQuantity;
+  }
+
   if (normalizedUnit === "ton" && lineTotal > 0 && unitPrice > 0) {
     return Number((lineTotal / unitPrice).toFixed(3));
   }
 
-  return parseQuantity(rawQuantity);
+  return 0;
 }
 
 function shouldExcludeInvoiceLine(description: string) {
@@ -680,7 +687,8 @@ function shouldExcludeInvoiceLine(description: string) {
     normalizedDescription.includes("stikprove") ||
     normalizedDescription.includes("stikprover") ||
     normalizedDescription.includes("hastleverance") ||
-    normalizedDescription.includes("hasteleverance")
+    normalizedDescription.includes("hasteleverance") ||
+    normalizedDescription.includes("palle")
   );
 }
 
@@ -726,6 +734,10 @@ function parseGenericInvoiceLines(text: string) {
 function parseInvoiceLines(text: string) {
   const blockDelimiter = "<<<LINE_END>>>";
   const sanitizedText = text
+    .replace(
+      /Overførtkr[\d.,]+[\s\S]*?Leveringsadresse[\s\S]*?KvantumEnhedBeskrivelseEnhedsprisI ALTOverførtkr[\d.,]+/gi,
+      " "
+    )
     .replace(
       /UNSPSC:\s*\d{8}(\d{1,3},\d{3}\s*(?:ton|sække|stk|palle\(r\)|paller|kg))/gi,
       `${blockDelimiter}$1`
@@ -793,6 +805,37 @@ function parseInvoiceLines(text: string) {
   }
 
   return parseGenericInvoiceLines(text);
+}
+
+function parseInvoiceAdjustedSubtotal(text: string) {
+  const normalizedText = normalizeWhitespace(text);
+  const subtotalMatch =
+    normalizedText.match(/Subtotal\s*kr\.?\s*([\d.]+,\d{2})/i) ??
+    normalizedText.match(/Subtotalkr\.?\s*([\d.]+,\d{2})/i);
+
+  const subtotal = subtotalMatch ? parseDanishNumber(subtotalMatch[1]) : 0;
+
+  if (!subtotal) {
+    return 0;
+  }
+
+  const excludedChargeMatches = Array.from(
+    normalizedText.matchAll(
+      /(?:\d+(?:[.,]\d+)?(?:x\d+(?:[.,]\d+)?)?\s*(?:ton|sække|stk|palle\(r\)|paller|kg)\s*)?((?:(?:stikprøve|stikprove|stikprøver|stikprover|hastleverance|hasteleverance)[^k]*?|palle(?:\(r\))?|paller?))\s*kr\s*([\d.,]+)\s*kr\s*([\d.]+,\d{2})/gi
+    )
+  );
+
+  const excludedTotal = excludedChargeMatches.reduce((sum, match) => {
+    const description = normalizeWhitespace(match[1]);
+
+    if (!shouldExcludeInvoiceLine(description)) {
+      return sum;
+    }
+
+    return sum + parseDanishNumber(match[3]);
+  }, 0);
+
+  return Math.max(0, Number((subtotal - excludedTotal).toFixed(2)));
 }
 
 function parseDeliveryAddress(text: string) {
@@ -968,8 +1011,10 @@ export async function parseInvoicePdf(file: File) {
   const invoiceNumberMatch = sourceText.match(/Nummer:\.*\s*(\d+)/i);
   const referenceMatch = sourceText.match(/Deres ref:\.*\s*([A-Za-z0-9-]+)/i);
   const lines = parseInvoiceLines(sourceText);
+  const adjustedSubtotal = parseInvoiceAdjustedSubtotal(sourceText);
 
   return {
+    adjustedSubtotal,
     customerRaw,
     dateIso,
     dateLabel,
@@ -1057,6 +1102,7 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
       invoice.deliveryCity
     );
     const invoiceLines = aggregateInvoiceLines(invoice.lines);
+    const useAdjustedSubtotal = invoice.adjustedSubtotal > 0 && invoiceLines.length === 1;
 
     if (!invoiceLines.length) {
       return [
@@ -1089,6 +1135,8 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
       const metadataMatch = findMetadataMatch(invoice, metadataRows, line);
 
       if (!metadataMatch) {
+        const effectiveLineTotal = useAdjustedSubtotal ? invoice.adjustedSubtotal : line.lineTotal;
+
         return {
           address: invoice.debtorAddress,
           customerName: resolvedCustomerName,
@@ -1099,7 +1147,7 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
           itemGroup: line.itemGroup,
           itemName: line.description,
           itemNumber: line.itemNumber,
-          lineTotal: toDecimalString(line.lineTotal),
+          lineTotal: toDecimalString(effectiveLineTotal),
           lookupKey: invoice.lookupCandidates[0] ?? resolvedCustomerName,
           quantity: toDecimalString(line.quantity, 2),
           skiContract: "",
@@ -1114,6 +1162,7 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
       }
 
       const matched = metadataMatch.row;
+      const effectiveLineTotal = useAdjustedSubtotal ? invoice.adjustedSubtotal : line.lineTotal;
 
       return {
         address: matched.address1 || invoice.debtorAddress,
@@ -1125,7 +1174,7 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
         itemGroup: matched.itemGroup || line.itemGroup,
         itemName: matched.itemName || line.description,
         itemNumber: matched.itemNumber || line.itemNumber,
-        lineTotal: toDecimalString(line.lineTotal),
+        lineTotal: toDecimalString(effectiveLineTotal),
         lookupKey: metadataMatch.lookupKey,
         quantity: toDecimalString(line.quantity, 2),
         skiContract: matched.contract,

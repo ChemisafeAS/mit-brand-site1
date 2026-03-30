@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import SkiReportTool from "./SkiReportTool";
 import styles from "./ski-report.module.css";
@@ -29,6 +30,9 @@ export default async function SkiIndberetningPage() {
             Test upload af metadata og fakturaer direkte i hjemmesiden. Systemet
             matcher mod metadata-arket og bygger et CSV-output, der kan åbnes i Excel.
           </p>
+          <Link href="/medarbejder" className={styles.backLink}>
+            Tilbage til medarbejdersiden
+          </Link>
         </div>
         <div className={styles.heroBadge}>Logget ind som {formatEmployeeName(user.email)}</div>
       </section>
