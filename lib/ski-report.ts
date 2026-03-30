@@ -26,6 +26,20 @@ const OUTPUT_HEADERS = [
   "Datoformat",
 ] as const;
 
+const VEJDIREKTORATET_LOCATIONS = [
+  "Lyngby",
+  "Hillerød",
+  "Aalborg",
+  "København",
+  "Skanderborg",
+  "Randers",
+  "Vejle",
+  "Bramming",
+  "Viborg",
+  "Holstebro",
+  "Kolding",
+] as const;
+
 export type SkiMetadataRow = {
   searchName: string;
   customerName: string;
@@ -178,6 +192,34 @@ function titleCaseCity(value: string) {
     .filter(Boolean)
     .map((segment) => segment.charAt(0).toLocaleUpperCase("da-DK") + segment.slice(1))
     .join(" ");
+}
+
+function getResolvedCustomerName(customerRaw: string, deliveryAddress: string, deliveryCity: string) {
+  const normalizedCustomer = normalizeWhitespace(customerRaw);
+
+  if (!/^Vejdirektoratet$/i.test(normalizedCustomer)) {
+    return normalizedCustomer;
+  }
+
+  const normalizedDeliveryAddress = normalizeLookupValue(deliveryAddress);
+  const normalizedDeliveryCity = normalizeLookupValue(deliveryCity);
+
+  for (const location of VEJDIREKTORATET_LOCATIONS) {
+    const normalizedLocation = normalizeLookupValue(location);
+
+    if (
+      normalizedDeliveryAddress.includes(normalizedLocation) ||
+      normalizedDeliveryCity.includes(normalizedLocation)
+    ) {
+      return `Vejdirektoratet ${location}`;
+    }
+  }
+
+  if (deliveryCity) {
+    return `Vejdirektoratet ${titleCaseCity(deliveryCity)}`;
+  }
+
+  return "Vejdirektoratet";
 }
 
 async function readZipEntry(zipPath: string, entryPath: string) {
@@ -766,43 +808,69 @@ function parseDeliveryAddress(text: string) {
 }
 
 function looksLikeStreetAddress(value: string) {
-  return /\d/.test(value) && /[A-Za-zÆØÅæøå]/.test(value);
+  const normalized = normalizeWhitespace(value);
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (
+    /\b(faktura|nummer|dato|konto|side|moms|ean|deres ref|vores ref|telefon|email|web|vedr)\b/i.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+
+  if (!/\d/.test(normalized) || !/[A-Za-zÆØÅæøå]/.test(normalized)) {
+    return false;
+  }
+
+  if (/^\d{4}\s+[A-Za-zÆØÅæøå]/.test(normalized)) {
+    return false;
+  }
+
+  return /\d/.test(normalized);
 }
 
 function looksLikePostalLine(value: string) {
-  return /\b\d{4}\s+[A-Za-zÆØÅæøå]/.test(value);
+  const normalized = normalizeWhitespace(value);
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (/\b(faktura|nummer|dato|konto|side|moms|ean|vedr)\b/i.test(normalized)) {
+    return false;
+  }
+
+  return /\b\d{4}\s+[A-Za-zÆØÅæøå]/.test(normalized);
+}
+
+function splitPotentialAddressLines(value: string) {
+  return value
+    .split(/\r?\n+/)
+    .map((line) => normalizeWhitespace(line))
+    .filter(Boolean);
 }
 
 function parseDebtorAddress(text: string) {
-  const blockBeforeNumber = normalizeWhitespace(text.match(/FAKTURA(.*?)Nummer:\.*/i)?.[1] ?? "");
-  const blockBeforeDate = normalizeWhitespace(
-    text.match(/Nummer:\.*\s*\d+(.*?)Dato:\.*/i)?.[1] ?? ""
+  const blockBeforeNumber = text.match(/FAKTURA([\s\S]*?)Nummer:\.*/i)?.[1] ?? "";
+  const blockBeforeDate = text.match(/Nummer:\.*\s*\d+([\s\S]*?)Dato:\.*/i)?.[1] ?? "";
+  const blockBeforeAccount =
+    text.match(/Dato:\.*\s*\d{2}\/\d{2}-\d{2}([\s\S]*?)Konto:\.*/i)?.[1] ?? "";
+
+  const rawBlocks = [blockBeforeNumber, blockBeforeDate, blockBeforeAccount]
+    .flatMap((block) => splitPotentialAddressLines(block))
+    .filter(Boolean);
+  const debtorAddressCandidates = Array.from(
+    new Set(
+      rawBlocks
+        .filter((block) => looksLikeStreetAddress(block) && !looksLikePostalLine(block))
+        .map((value) => normalizeWhitespace(value))
+        .filter(Boolean)
+    )
   );
-  const blockBeforeAccount = normalizeWhitespace(
-    text.match(/Dato:\.*\s*\d{2}\/\d{2}-\d{2}(.*?)Konto:\.*/i)?.[1] ?? ""
-  );
-
-  const rawBlocks = [blockBeforeNumber, blockBeforeDate, blockBeforeAccount].filter(Boolean);
-  const candidates = new Set<string>();
-
-  for (const block of rawBlocks) {
-    if (looksLikeStreetAddress(block) || looksLikePostalLine(block)) {
-      candidates.add(block);
-    }
-  }
-
-  const streetLine = rawBlocks.find((block) => looksLikeStreetAddress(block));
-  const postalLine = rawBlocks.find((block) => looksLikePostalLine(block));
-
-  if (streetLine && postalLine) {
-    candidates.add(`${streetLine} ${postalLine}`);
-  }
-
-  if (!candidates.size && rawBlocks.length) {
-    candidates.add(rawBlocks.join(" "));
-  }
-
-  const debtorAddressCandidates = Array.from(candidates).map((value) => normalizeWhitespace(value));
 
   return {
     debtorAddress: debtorAddressCandidates[0] ?? "",
@@ -849,9 +917,9 @@ function buildLookupCandidates(
   deliveryCity: string
 ) {
   const candidates = new Set<string>();
-  const normalizedCustomer = normalizeWhitespace(customerRaw);
+  const normalizedCustomer = getResolvedCustomerName(customerRaw, deliveryAddress, deliveryCity);
   const normalizedDebtorAddress = normalizeWhitespace(debtorAddress);
-  const isVejdirektoratet = /^Vejdirektoratet$/i.test(normalizedCustomer);
+  const isVejdirektoratet = /^Vejdirektoratet(?:\s|$)/i.test(normalizedCustomer);
 
   if (normalizedCustomer) {
     candidates.add(normalizedCustomer);
@@ -925,7 +993,14 @@ export async function parseInvoicePdf(file: File) {
 }
 
 function findMetadataMatch(invoice: ParsedInvoice, metadataRows: SkiMetadataRow[], line: ParsedInvoiceLine) {
-  const normalizedCustomerName = normalizeLookupValue(invoice.customerRaw);
+  const resolvedCustomerName = getResolvedCustomerName(
+    invoice.customerRaw,
+    invoice.deliveryAddress,
+    invoice.deliveryCity
+  );
+  const normalizedCustomerName = normalizeLookupValue(
+    resolvedCustomerName
+  );
 
   const directMatch = metadataRows.find((row) => {
     if (normalizeLookupValue(row.customerName) !== normalizedCustomerName) {
@@ -941,7 +1016,7 @@ function findMetadataMatch(invoice: ParsedInvoice, metadataRows: SkiMetadataRow[
 
   if (directMatch) {
     return {
-      lookupKey: `${invoice.customerRaw} + debitoradresse`,
+      lookupKey: `${resolvedCustomerName} + debitoradresse`,
       row: directMatch,
     };
   }
@@ -976,13 +1051,18 @@ function findMetadataMatch(invoice: ParsedInvoice, metadataRows: SkiMetadataRow[
 
 export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: ParsedInvoice[]) {
   return invoices.flatMap((invoice) => {
+    const resolvedCustomerName = getResolvedCustomerName(
+      invoice.customerRaw,
+      invoice.deliveryAddress,
+      invoice.deliveryCity
+    );
     const invoiceLines = aggregateInvoiceLines(invoice.lines);
 
     if (!invoiceLines.length) {
       return [
         {
           address: invoice.debtorAddress,
-          customerName: invoice.customerRaw,
+          customerName: resolvedCustomerName,
           dateFormat: invoice.dateIso,
           ean: "",
           fakturaDato: invoice.dateNumeric,
@@ -991,7 +1071,7 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
           itemName: "",
           itemNumber: "",
           lineTotal: "",
-          lookupKey: invoice.lookupCandidates[0] ?? invoice.customerRaw,
+          lookupKey: invoice.lookupCandidates[0] ?? resolvedCustomerName,
           quantity: "",
           skiContract: "",
           skiReportingCode: "",
@@ -1011,7 +1091,7 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
       if (!metadataMatch) {
         return {
           address: invoice.debtorAddress,
-          customerName: invoice.customerRaw,
+          customerName: resolvedCustomerName,
           dateFormat: invoice.dateIso,
           ean: "",
           fakturaDato: invoice.dateNumeric,
@@ -1020,7 +1100,7 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
           itemName: line.description,
           itemNumber: line.itemNumber,
           lineTotal: toDecimalString(line.lineTotal),
-          lookupKey: invoice.lookupCandidates[0] ?? invoice.customerRaw,
+          lookupKey: invoice.lookupCandidates[0] ?? resolvedCustomerName,
           quantity: toDecimalString(line.quantity, 2),
           skiContract: "",
           skiReportingCode: "",
@@ -1037,7 +1117,7 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
 
       return {
         address: matched.address1 || invoice.debtorAddress,
-        customerName: matched.customerName || invoice.customerRaw,
+        customerName: matched.customerName || resolvedCustomerName,
         dateFormat: invoice.dateIso,
         ean: matched.ean,
         fakturaDato: invoice.dateNumeric,
