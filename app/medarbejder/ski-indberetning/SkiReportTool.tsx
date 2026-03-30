@@ -134,11 +134,6 @@ function Summary({ state }: { state: SkiReportState }) {
   );
 }
 
-type PickerGroup = {
-  id: number;
-  kind: "files" | "folder";
-};
-
 function FolderInput({
   className,
   name,
@@ -419,10 +414,8 @@ function EditableResultsTable({ initialRows }: { initialRows: ReportRow[] }) {
 
 export default function SkiReportTool() {
   const [rawState, formAction] = useActionState(runSkiReport, initialSkiReportState);
-  const [pickerGroups, setPickerGroups] = useState<PickerGroup[]>([
-    { id: 1, kind: "files" },
-  ]);
-  const [pickerCounts, setPickerCounts] = useState<Record<number, number>>({});
+  const [selectedInvoiceCount, setSelectedInvoiceCount] = useState(0);
+  const [selectedFolderInvoiceCount, setSelectedFolderInvoiceCount] = useState(0);
   const state: SkiReportState = {
     ...initialSkiReportState,
     ...(rawState ?? {}),
@@ -440,18 +433,7 @@ export default function SkiReportTool() {
   const rowsSignature = rows
     .map((row) => `${row.sourceFileName}-${row.itemNumber}-${row.quantity}-${row.lineTotal}`)
     .join("|");
-  const totalSelected = Object.values(pickerCounts).reduce((sum, count) => sum + count, 0);
-
-  function updatePickerCount(id: number, count: number) {
-    setPickerCounts((current) => ({
-      ...current,
-      [id]: count,
-    }));
-  }
-
-  function addPickerGroup(kind: PickerGroup["kind"]) {
-    setPickerGroups((current) => [...current, { id: Date.now() + current.length, kind }]);
-  }
+  const totalSelected = selectedInvoiceCount + selectedFolderInvoiceCount;
 
   return (
     <div className={styles.stack}>
@@ -470,59 +452,40 @@ export default function SkiReportTool() {
         </p>
 
         <form action={formAction} className={styles.form}>
-          <div className={styles.pickerStack}>
-            {pickerGroups.map((group, pickerIndex) => (
-              <label key={group.id} className={styles.field}>
-                <span className={styles.label}>
-                  {group.kind === "files"
-                    ? `Fakturaer (.pdf, flere filer er tilladt) ${pickerIndex + 1}`
-                    : `Mappe med PDF-fakturaer ${pickerIndex + 1}`}
-                </span>
-                {group.kind === "folder" ? (
-                  <FolderInput
-                    className={styles.input}
-                    name="invoices"
-                    onFileCountChange={(count) => updatePickerCount(group.id, count)}
-                  />
-                ) : (
-                  <input
-                    className={styles.input}
-                    type="file"
-                    name="invoices"
-                    accept=".pdf"
-                    multiple
-                    onChange={(event) => {
-                      updatePickerCount(group.id, event.currentTarget.files?.length ?? 0);
-                    }}
-                  />
-                )}
-                {pickerCounts[group.id] ? (
-                  <span className={styles.helperText}>
-                    Valgte PDF-filer: <strong>{pickerCounts[group.id]}</strong>
-                  </span>
-                ) : null}
-              </label>
-            ))}
-          </div>
-          <div className={styles.actions}>
-            <button
-              className={styles.secondaryButton}
-              type="button"
-              onClick={() => addPickerGroup("files")}
-            >
-              Tilføj flere filer
-            </button>
-            <button
-              className={styles.secondaryButton}
-              type="button"
-              onClick={() => addPickerGroup("folder")}
-            >
-              Tilføj en mappe mere
-            </button>
-          </div>
+          <label className={styles.field}>
+            <span className={styles.label}>Fakturaer (.pdf, flere filer er tilladt)</span>
+            <input
+              className={styles.input}
+              type="file"
+              name="invoices"
+              accept=".pdf"
+              multiple
+              onChange={(event) => {
+                setSelectedInvoiceCount(event.currentTarget.files?.length ?? 0);
+              }}
+            />
+            {selectedInvoiceCount ? (
+              <span className={styles.helperText}>
+                Valgte PDF-filer til næste kørsel: <strong>{selectedInvoiceCount}</strong>
+              </span>
+            ) : null}
+          </label>
+
+          <label className={styles.field}>
+            <span className={styles.label}>Eller vælg en hel mappe med PDF&apos;er</span>
+            <FolderInput
+              className={styles.input}
+              name="invoices"
+              onFileCountChange={setSelectedFolderInvoiceCount}
+            />
+            {selectedFolderInvoiceCount ? (
+              <span className={styles.helperText}>
+                Valgte PDF-filer fra mappe: <strong>{selectedFolderInvoiceCount}</strong>
+              </span>
+            ) : null}
+          </label>
           <span className={styles.helperText}>
-            Du kan nu vælge filer og mapper ad flere omgange. Alle valgte PDF&apos;er sendes med i
-            samme kørsel.
+            Brug enten enkeltfiler eller en hel mappe fra OneDrive/Finder i én kørsel.
           </span>
           {totalSelected ? (
             <span className={styles.helperText}>
