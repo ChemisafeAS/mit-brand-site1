@@ -688,6 +688,8 @@ function shouldExcludeInvoiceLine(description: string) {
     normalizedDescription.includes("stikprover") ||
     normalizedDescription.includes("hastleverance") ||
     normalizedDescription.includes("hasteleverance") ||
+    normalizedDescription.includes("weekendtillaeg") ||
+    normalizedDescription.includes("weekendtillag") ||
     normalizedDescription.includes("palle")
   );
 }
@@ -821,7 +823,7 @@ function parseInvoiceAdjustedSubtotal(text: string) {
 
   const excludedChargeMatches = Array.from(
     normalizedText.matchAll(
-      /(?:\d+(?:[.,]\d+)?(?:x\d+(?:[.,]\d+)?)?\s*(?:ton|sække|stk|palle\(r\)|paller|kg)\s*)?((?:(?:stikprøve|stikprove|stikprøver|stikprover|hastleverance|hasteleverance)[^k]*?|palle(?:\(r\))?|paller?))\s*kr\s*([\d.,]+)\s*kr\s*([\d.]+,\d{2})/gi
+      /(?:\d+(?:[.,]\d+)?(?:x\d+(?:[.,]\d+)?)?\s*(?:ton|sække|stk|palle\(r\)|paller|kg)\s*)?((?:(?:stikprøve|stikprove|stikprøver|stikprover|hastleverance|hasteleverance|weekendtillæg|weekendtillag)[^k]*?|palle(?:\(r\))?|paller?))\s*kr\s*([\d.,]+)\s*kr\s*([\d.]+,\d{2})/gi
     )
   );
 
