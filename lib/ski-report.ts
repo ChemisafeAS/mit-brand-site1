@@ -23,7 +23,6 @@ const OUTPUT_HEADERS = [
   "SKIRammekontrakt",
   "SKIIndrapporteringskode",
   "Enhedspris",
-  "Datoformat",
 ] as const;
 
 const VEJDIREKTORATET_LOCATIONS = [
@@ -68,18 +67,20 @@ export type ParsedInvoiceLine = {
   itemNumber: string;
   lineTotal: number;
   quantity: number;
+  quantitySource: QuantitySource;
   rawQuantity: string;
   skiId: string;
   unit: string;
   unitPrice: number;
 };
 
+type QuantitySource = "parsed" | "fallback_from_total" | "subtotal_division";
+
 export type ParsedInvoice = {
   adjustedSubtotal: number;
   customerRaw: string;
   dateIso: string;
   dateLabel: string;
-  dateNumeric: string;
   debtorAddress: string;
   debtorAddressCandidates: string[];
   deliveryAddress: string;
@@ -94,6 +95,8 @@ export type ParsedInvoice = {
 
 export type ReportRow = {
   address: string;
+  controlPrice: string;
+  controlStatus: "correct" | "review" | "incomplete" | "not_relevant";
   customerName: string;
   dateFormat: string;
   ean: string;
@@ -105,6 +108,7 @@ export type ReportRow = {
   lineTotal: string;
   lookupKey: string;
   quantity: string;
+  readQuantity: string;
   skiContract: string;
   skiReportingCode: string;
   sourceFileName: string;
@@ -129,6 +133,10 @@ function aggregateInvoiceLines(lines: ParsedInvoiceLine[]) {
 
     existing.lineTotal += line.lineTotal;
     existing.quantity += line.quantity;
+    existing.quantitySource =
+      existing.quantitySource === "parsed" && line.quantitySource === "parsed"
+        ? "parsed"
+        : "fallback_from_total";
   }
 
   return Array.from(grouped.values());
@@ -182,11 +190,6 @@ function parseDanishNumber(value: string) {
   const cleaned = value.replace(/\./g, "").replace(",", ".").trim();
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function formatDateNumeric(dateIso: string) {
-  const [year, month, day] = dateIso.split("-");
-  return String(Number(`${day}${month}${year.slice(-2)}`));
 }
 
 function titleCaseCity(value: string) {
@@ -662,39 +665,181 @@ function normalizeInvoiceQuantity(
   normalizedUnit: string,
   lineTotal: number,
   unitPrice: number
-) {
+): { quantity: number; source: QuantitySource } {
   const compact = rawQuantity.replace(/\s+/g, "");
   const palletMatch = compact.match(/^(\d+)x\d+(?:[.,]\d+)?$/i);
 
   if (normalizedUnit === "Palle(r)" && palletMatch) {
-    return parseDanishNumber(palletMatch[1]);
+    return {
+      quantity: parseDanishNumber(palletMatch[1]),
+      source: "parsed",
+    };
   }
 
   const parsedQuantity = parseQuantity(rawQuantity);
 
   if (parsedQuantity > 0) {
-    return parsedQuantity;
+    return {
+      quantity: parsedQuantity,
+      source: "parsed",
+    };
   }
 
   if (normalizedUnit === "ton" && lineTotal > 0 && unitPrice > 0) {
-    return Number((lineTotal / unitPrice).toFixed(3));
+    return {
+      quantity: Number((lineTotal / unitPrice).toFixed(3)),
+      source: "fallback_from_total",
+    };
   }
 
-  return 0;
+  return {
+    quantity: 0,
+    source: "parsed",
+  };
 }
 
-function shouldExcludeInvoiceLine(description: string) {
-  const normalizedDescription = normalizeLookupValue(description);
+function getControlState(
+  line: ParsedInvoiceLine,
+  effectiveLineTotal: number,
+  effectiveQuantity: number,
+  effectiveQuantitySource: ParsedInvoiceLine["quantitySource"]
+): Pick<ReportRow, "controlPrice" | "controlStatus"> {
+  if (line.unit !== "ton") {
+    return {
+      controlPrice: "",
+      controlStatus: "not_relevant",
+    };
+  }
+
+  if (effectiveQuantitySource === "subtotal_division") {
+    if (line.quantitySource !== "parsed" || line.quantity <= 0) {
+      return {
+        controlPrice:
+          effectiveQuantity > 0 ? toDecimalString(effectiveLineTotal / effectiveQuantity) : "",
+        controlStatus: "incomplete",
+      };
+    }
+
+    const controlPrice = effectiveQuantity > 0 ? effectiveLineTotal / effectiveQuantity : 0;
+    const quantityDifference = Math.abs(effectiveQuantity - line.quantity);
+
+    return {
+      controlPrice: controlPrice > 0 ? toDecimalString(controlPrice) : "",
+      controlStatus: quantityDifference <= 0.2 ? "correct" : "review",
+    };
+  }
+
+  if (effectiveQuantitySource !== "parsed") {
+    return {
+      controlPrice:
+        effectiveQuantity > 0 ? toDecimalString(effectiveLineTotal / effectiveQuantity) : "",
+      controlStatus: "incomplete",
+    };
+  }
+
+  if (effectiveQuantity <= 0 || effectiveLineTotal <= 0 || line.unitPrice <= 0) {
+    return {
+      controlPrice: "",
+      controlStatus: "incomplete",
+    };
+  }
+
+  const controlPrice = effectiveLineTotal / effectiveQuantity;
+  const difference = Math.abs(controlPrice - line.unitPrice);
+
+  return {
+    controlPrice: toDecimalString(controlPrice),
+    controlStatus: difference <= 0.1 ? "correct" : "review",
+  };
+}
+
+function getEffectiveInvoiceQuantity(
+  line: ParsedInvoiceLine,
+  effectiveLineTotal: number,
+  useAdjustedSubtotal: boolean
+): { quantity: number; source: QuantitySource } {
+  if (line.unit === "ton" && useAdjustedSubtotal && effectiveLineTotal > 0 && line.unitPrice > 0) {
+    return {
+      quantity: Number((effectiveLineTotal / line.unitPrice).toFixed(3)),
+      source: "subtotal_division",
+    };
+  }
+
+  return {
+    quantity: line.quantity,
+    source: line.quantitySource,
+  };
+}
+
+const EXCLUDED_ITEM_NUMBERS = new Set(["4919111", "4919112", "4949091"]);
+const ALLOWED_PRODUCT_RULES: Array<{
+  itemNumbers: string[];
+  aliases: string[];
+  units: string[];
+}> = [
+  {
+    itemNumbers: ["4919851", "4919852"],
+    aliases: ["stensalt"],
+    units: ["ton"],
+  },
+  {
+    itemNumbers: ["4919881", "4919882"],
+    aliases: ["havsalt", "loesvaegt", "løsvægt"],
+    units: ["ton"],
+  },
+  {
+    itemNumbers: ["4900151"],
+    aliases: ["pingo", "vejsalt", "15 kg", "15kg", "70 saekke", "70 sække"],
+    units: ["Palle(r)"],
+  },
+] as const;
+
+const ALLOWED_ITEM_NUMBERS = new Set(
+  ALLOWED_PRODUCT_RULES.flatMap((rule) => rule.itemNumbers)
+);
+
+function shouldExcludeInvoiceLine(description: string, itemNumber = "") {
+  const normalizedDescription = normalizeWhitespace(description)
+    .toLocaleLowerCase("da-DK")
+    .replaceAll("æ", "ae")
+    .replaceAll("ø", "oe")
+    .replaceAll("å", "aa")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (EXCLUDED_ITEM_NUMBERS.has(normalizeWhitespace(itemNumber))) {
+    return true;
+  }
 
   return (
-    normalizedDescription.includes("stikprove") ||
-    normalizedDescription.includes("stikprover") ||
+    normalizedDescription.includes("proeve") ||
+    normalizedDescription.includes("prove") ||
     normalizedDescription.includes("hastleverance") ||
     normalizedDescription.includes("hasteleverance") ||
+    normalizedDescription.includes("opskubber") ||
     normalizedDescription.includes("weekendtillaeg") ||
     normalizedDescription.includes("weekendtillag") ||
     normalizedDescription.includes("palle")
   );
+}
+
+function isAllowedInvoiceLine(description: string, itemNumber: string, unit: string) {
+  const normalizedItemNumber = normalizeWhitespace(itemNumber);
+
+  if (ALLOWED_ITEM_NUMBERS.has(normalizedItemNumber)) {
+    return true;
+  }
+
+  const normalizedDescription = normalizeLookupValue(description);
+
+  return ALLOWED_PRODUCT_RULES.some((rule) => {
+    if (!rule.units.includes(unit)) {
+      return false;
+    }
+
+    return rule.aliases.some((alias) => normalizedDescription.includes(normalizeLookupValue(alias)));
+  });
 }
 
 function parseGenericInvoiceLines(text: string) {
@@ -713,14 +858,15 @@ function parseGenericInvoiceLines(text: string) {
       const unitPrice = parseDanishNumber(match[4]);
       const lineTotal = parseDanishNumber(match[5]);
       const unit = normalizeInvoiceUnit(rawUnit, description, rawQuantity);
-      const quantity = normalizeInvoiceQuantity(rawQuantity, unit, lineTotal, unitPrice);
+      const quantityResult = normalizeInvoiceQuantity(rawQuantity, unit, lineTotal, unitPrice);
 
       return {
         description,
         itemGroup: "",
         itemNumber: "",
         lineTotal,
-        quantity,
+        quantity: quantityResult.quantity,
+        quantitySource: quantityResult.source,
         rawQuantity,
         skiId: "",
         unit,
@@ -729,11 +875,51 @@ function parseGenericInvoiceLines(text: string) {
     })
     .filter(
       (line) =>
-        line.quantity > 0 &&
         line.lineTotal > 0 &&
-        !shouldExcludeInvoiceLine(line.description) &&
-        !normalizeLookupValue(line.description).includes("palle")
+        (line.quantity > 0 || shouldExcludeInvoiceLine(line.description, line.itemNumber))
     );
+}
+
+function parseGenericInvoiceBlock(block: string) {
+  const normalizedBlock = normalizeWhitespace(block);
+  const match = normalizedBlock.match(
+    /^(\d+(?:[.,]\d+)?(?:x\d+(?:[.,]\d+)?)?)\s*(ton|sække|stk|palle\(r\)|paller|kg)\s*(.*?)\s*kr\s*([\d.,]+)\s*kr\s*([\d.]+,\d{2})/i
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const rawQuantity = normalizeWhitespace(match[1]);
+  const rawUnit = normalizeWhitespace(match[2]);
+  const description = normalizeWhitespace(match[3]);
+  const unitPrice = parseDanishNumber(match[4]);
+  const lineTotal = parseDanishNumber(match[5]);
+  const unit = normalizeInvoiceUnit(rawUnit, description, rawQuantity);
+  const quantityResult = normalizeInvoiceQuantity(rawQuantity, unit, lineTotal, unitPrice);
+
+  if (
+    quantityResult.quantity <= 0 ||
+    lineTotal <= 0 ||
+    shouldExcludeInvoiceLine(description) ||
+    !isAllowedInvoiceLine(description, "", unit) ||
+    normalizeLookupValue(description).includes("palle")
+  ) {
+    return null;
+  }
+
+  return {
+    description,
+    itemGroup: "",
+    itemNumber: "",
+    lineTotal,
+    quantity: quantityResult.quantity,
+    quantitySource: quantityResult.source,
+    rawQuantity,
+    skiId: "",
+    unit,
+    unitPrice,
+  } satisfies ParsedInvoiceLine;
 }
 
 function parseInvoiceLines(text: string) {
@@ -781,14 +967,15 @@ function parseInvoiceLines(text: string) {
       const itemNumber = hasExplicitLineTotal ? match[6] : match[5];
       const skiId = hasExplicitLineTotal ? match[7] : match[6];
       const unit = normalizeInvoiceUnit(rawUnit, description, rawQuantity);
-      const quantity = normalizeInvoiceQuantity(rawQuantity, unit, lineTotal, unitPrice);
+      const quantityResult = normalizeInvoiceQuantity(rawQuantity, unit, lineTotal, unitPrice);
 
       return {
         description,
         itemGroup: skiId,
         itemNumber,
         lineTotal,
-        quantity,
+        quantity: quantityResult.quantity,
+        quantitySource: quantityResult.source,
         rawQuantity,
         skiId,
         unit,
@@ -801,15 +988,77 @@ function parseInvoiceLines(text: string) {
           line &&
             line.itemNumber &&
             line.quantity > 0 &&
-            !shouldExcludeInvoiceLine(line.description)
+            isAllowedInvoiceLine(line.description, line.itemNumber, line.unit) &&
+            !shouldExcludeInvoiceLine(line.description, line.itemNumber)
         )
     );
 
+  const genericLines = parseGenericInvoiceLines(text);
+
   if (structuredLines.length) {
-    return structuredLines;
+    const distinctStructuredItems = Array.from(
+      new Set(
+        structuredLines
+          .map((line) =>
+            line.itemNumber && line.skiId ? `${line.itemNumber}|${line.skiId}` : ""
+          )
+          .filter(Boolean)
+      )
+    );
+
+    const fallbackItem =
+      distinctStructuredItems.length === 1 ? distinctStructuredItems[0].split("|") : null;
+
+    const supplementedLines = rawBlocks
+      .filter((block) => {
+        const structuredMatch =
+          block.match(
+            /(\d+(?:[.,]\d+)?(?:x\d+(?:[.,]\d+)?)?)\s*(ton|sække|stk|palle\(r\)|paller|kg)\s*(.*?)\s*kr\s*([\d.,]+)\s*kr\s*([\d.]+,\d{2}).*?Varenummer:\s*(\d+)\s*SKI ID:\s*([A-Z0-9-]+)/i
+          ) ??
+          block.match(
+            /(\d+(?:[.,]\d+)?(?:x\d+(?:[.,]\d+)?)?)\s*(ton|sække|stk|palle\(r\)|paller|kg)\s*(.*?)\s*kr\s*([\d.,]+)\s*kr\s*Vejeseddelnr\.\s*:\s*[A-Z0-9-]+.*?Varenummer:\s*(\d+)\s*SKI ID:\s*([A-Z0-9-]+)/i
+          );
+
+        return !structuredMatch;
+      })
+      .map((block) => parseGenericInvoiceBlock(block))
+      .filter((genericLine): genericLine is ParsedInvoiceLine => Boolean(genericLine))
+      .filter((genericLine) => {
+        const normalizedGenericDescription = normalizeLookupValue(genericLine.description);
+
+        return !structuredLines.some(
+          (structuredLine) =>
+            structuredLine.unit === genericLine.unit &&
+            Math.abs(structuredLine.quantity - genericLine.quantity) < 0.001 &&
+            Math.abs(structuredLine.lineTotal - genericLine.lineTotal) < 0.01 &&
+            normalizeLookupValue(structuredLine.description) === normalizedGenericDescription
+        );
+      })
+      .map((genericLine) => {
+        if (!fallbackItem) {
+          return null;
+        }
+
+        const [itemNumber, skiId] = fallbackItem;
+
+        return {
+          ...genericLine,
+          itemGroup: skiId,
+          itemNumber,
+          skiId,
+        } satisfies ParsedInvoiceLine;
+      })
+      .filter((line): line is ParsedInvoiceLine => Boolean(line));
+
+    return [...structuredLines, ...supplementedLines];
   }
 
-  return parseGenericInvoiceLines(text);
+  return genericLines.filter(
+    (line) =>
+      isAllowedInvoiceLine(line.description, line.itemNumber, line.unit) &&
+      !shouldExcludeInvoiceLine(line.description, line.itemNumber) &&
+      !normalizeLookupValue(line.description).includes("palle")
+  );
 }
 
 function parseInvoiceAdjustedSubtotal(text: string) {
@@ -824,9 +1073,13 @@ function parseInvoiceAdjustedSubtotal(text: string) {
     return 0;
   }
 
+  const parsedChargeLines = parseGenericInvoiceLines(text)
+    .filter((line) => shouldExcludeInvoiceLine(line.description, line.itemNumber))
+    .reduce((sum, line) => sum + line.lineTotal, 0);
+
   const excludedChargeMatches = Array.from(
     normalizedText.matchAll(
-      /(?:\d+(?:[.,]\d+)?(?:x\d+(?:[.,]\d+)?)?\s*(?:ton|sække|stk|palle\(r\)|paller|kg)\s*)?((?:(?:stikprøve|stikprove|stikprøver|stikprover|hastleverance|hasteleverance|weekendtillæg|weekendtillag)[^k]*?|palle(?:\(r\))?|paller?))\s*kr\s*([\d.,]+)\s*kr\s*([\d.]+,\d{2})/gi
+      /(?:-?\d+(?:[.,]\d+)?(?:x-?\d+(?:[.,]\d+)?)?\s*(?:ton|sække|stk|palle\(r\)|paller|kg|timer)\s*)?((?:\S*(?:prøve|prove)\S*|\S*leverance\S*|\S*till[æa]g\S*|\S*opskubber\S*|palle(?:\(r\))?|paller?))\s*kr\s*(-?[\d.,]+)\s*kr\s*(-?[\d.]+,\d{2})/gi
     )
   );
 
@@ -837,10 +1090,12 @@ function parseInvoiceAdjustedSubtotal(text: string) {
       return sum;
     }
 
-    return sum + parseDanishNumber(match[3]);
+    return sum + Math.abs(parseDanishNumber(match[3]));
   }, 0);
 
-  return Math.max(0, Number((subtotal - excludedTotal).toFixed(2)));
+  const uniqueExcludedTotal = Math.max(excludedTotal, parsedChargeLines);
+
+  return Math.max(0, Number((subtotal - uniqueExcludedTotal).toFixed(2)));
 }
 
 function parseDeliveryAddress(text: string) {
@@ -932,6 +1187,11 @@ function parseCustomerRaw(text: string) {
 
   return normalizeWhitespace(
     rawCustomer
+      .replace(
+        /^(?:EAN(?:\s*SE)?\s*NOTAT|SE\s*NOTAT|EAN\s*NOTAT|EAN)[:.\s-]*/i,
+        ""
+      )
+      .replace(/^(?:att\.?|c\/o|co|kontaktperson)[:.\s-]*/i, "")
       .replace(/^EAN\s*:?\s*\d{8,20}\s*/i, "")
       .replace(/^\d{8,20}\s*/i, "")
   );
@@ -944,7 +1204,6 @@ function parseDate(text: string) {
     return {
       dateIso: "",
       dateLabel: "",
-      dateNumeric: "",
     };
   }
 
@@ -953,8 +1212,7 @@ function parseDate(text: string) {
 
   return {
     dateIso,
-    dateLabel: `${day}/${month}-${year}`,
-    dateNumeric: formatDateNumeric(dateIso),
+    dateLabel: `${day}.${month}.20${year}`,
   };
 }
 
@@ -1010,7 +1268,7 @@ export async function parseInvoicePdf(file: File) {
   const buffer = Buffer.from(await file.arrayBuffer());
   const sourceText = extractPdfText(buffer);
   const customerRaw = parseCustomerRaw(sourceText);
-  const { dateIso, dateLabel, dateNumeric } = parseDate(sourceText);
+  const { dateIso, dateLabel } = parseDate(sourceText);
   const { debtorAddress, debtorAddressCandidates } = parseDebtorAddress(sourceText);
   const { deliveryAddress, deliveryCity } = parseDeliveryAddress(sourceText);
   const invoiceNumberMatch = sourceText.match(/Nummer:\.*\s*(\d+)/i);
@@ -1023,7 +1281,6 @@ export async function parseInvoicePdf(file: File) {
     customerRaw,
     dateIso,
     dateLabel,
-    dateNumeric,
     debtorAddress,
     debtorAddressCandidates,
     deliveryAddress,
@@ -1113,10 +1370,12 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
       return [
         {
           address: invoice.debtorAddress,
+          controlPrice: "",
+          controlStatus: "not_relevant",
           customerName: resolvedCustomerName,
           dateFormat: invoice.dateIso,
           ean: "",
-          fakturaDato: invoice.dateNumeric,
+          fakturaDato: invoice.dateLabel,
           fakturaNr: invoice.invoiceNumber,
           itemGroup: "",
           itemName: "",
@@ -1124,6 +1383,7 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
           lineTotal: "",
           lookupKey: invoice.lookupCandidates[0] ?? resolvedCustomerName,
           quantity: "",
+          readQuantity: "",
           skiContract: "",
           skiReportingCode: "",
           sourceFileName: invoice.fileName,
@@ -1141,20 +1401,34 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
 
       if (!metadataMatch) {
         const effectiveLineTotal = useAdjustedSubtotal ? invoice.adjustedSubtotal : line.lineTotal;
+        const effectiveQuantity = getEffectiveInvoiceQuantity(
+          line,
+          effectiveLineTotal,
+          useAdjustedSubtotal
+        );
+        const controlState = getControlState(
+          line,
+          effectiveLineTotal,
+          effectiveQuantity.quantity,
+          effectiveQuantity.source
+        );
 
         return {
           address: invoice.debtorAddress,
+          controlPrice: controlState.controlPrice,
+          controlStatus: controlState.controlStatus,
           customerName: resolvedCustomerName,
           dateFormat: invoice.dateIso,
           ean: "",
-          fakturaDato: invoice.dateNumeric,
+          fakturaDato: invoice.dateLabel,
           fakturaNr: invoice.invoiceNumber,
           itemGroup: line.itemGroup,
           itemName: line.description,
           itemNumber: line.itemNumber,
           lineTotal: toDecimalString(effectiveLineTotal),
           lookupKey: invoice.lookupCandidates[0] ?? resolvedCustomerName,
-          quantity: toDecimalString(line.quantity, 2),
+          quantity: toDecimalString(effectiveQuantity.quantity, 2),
+          readQuantity: line.unit === "ton" && line.quantity > 0 ? toDecimalString(line.quantity, 2) : "",
           skiContract: "",
           skiReportingCode: "",
           sourceFileName: invoice.fileName,
@@ -1168,20 +1442,34 @@ export function buildReportRows(metadataRows: SkiMetadataRow[], invoices: Parsed
 
       const matched = metadataMatch.row;
       const effectiveLineTotal = useAdjustedSubtotal ? invoice.adjustedSubtotal : line.lineTotal;
+      const effectiveQuantity = getEffectiveInvoiceQuantity(
+        line,
+        effectiveLineTotal,
+        useAdjustedSubtotal
+      );
+      const controlState = getControlState(
+        line,
+        effectiveLineTotal,
+        effectiveQuantity.quantity,
+        effectiveQuantity.source
+      );
 
       return {
         address: matched.address1 || invoice.debtorAddress,
+        controlPrice: controlState.controlPrice,
+        controlStatus: controlState.controlStatus,
         customerName: matched.customerName || resolvedCustomerName,
         dateFormat: invoice.dateIso,
         ean: matched.ean,
-        fakturaDato: invoice.dateNumeric,
+        fakturaDato: invoice.dateLabel,
         fakturaNr: invoice.invoiceNumber,
         itemGroup: matched.itemGroup || line.itemGroup,
         itemName: matched.itemName || line.description,
         itemNumber: matched.itemNumber || line.itemNumber,
         lineTotal: toDecimalString(effectiveLineTotal),
         lookupKey: metadataMatch.lookupKey,
-        quantity: toDecimalString(line.quantity, 2),
+        quantity: toDecimalString(effectiveQuantity.quantity, 2),
+        readQuantity: line.unit === "ton" && line.quantity > 0 ? toDecimalString(line.quantity, 2) : "",
         skiContract: matched.contract,
         skiReportingCode: matched.skiReportingCode,
         sourceFileName: invoice.fileName,
@@ -1218,7 +1506,6 @@ export function buildCsv(rows: ReportRow[]) {
         row.skiContract,
         row.skiReportingCode,
         row.unitPrice,
-        row.dateFormat,
       ]
         .map((value) => escapeCsv(value))
         .join(delimiter)

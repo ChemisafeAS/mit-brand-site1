@@ -79,6 +79,19 @@ function getMonthLabel(monthKey: string) {
   }).format(date);
 }
 
+function getControlStatusLabel(status: ReportRow["controlStatus"]) {
+  switch (status) {
+    case "correct":
+      return "Korrekt";
+    case "review":
+      return "Tjek efter";
+    case "incomplete":
+      return "Mangelfuld læsning";
+    default:
+      return "Ikke relevant";
+  }
+}
+
 function buildEditableCsv(rows: ReportRow[]) {
   const delimiter = ";";
   const headers = [
@@ -97,7 +110,6 @@ function buildEditableCsv(rows: ReportRow[]) {
     "SKIRammekontrakt",
     "SKIIndrapporteringskode",
     "Enhedspris",
-    "Datoformat",
   ];
 
   return [
@@ -119,7 +131,6 @@ function buildEditableCsv(rows: ReportRow[]) {
         row.skiContract,
         row.skiReportingCode,
         row.unitPrice,
-        row.dateFormat,
       ]
         .map((value) => escapeCsvValue(value))
         .join(delimiter)
@@ -312,8 +323,11 @@ function ResultsWithInvoiceLinks({
               <th>Varenr</th>
               <th>Varenavn</th>
               <th>Antal</th>
+              <th>Læst mængde</th>
               <th>Enhed</th>
               <th>Linietotal</th>
+              <th>Kontrolpris</th>
+              <th>Kontrolstatus</th>
               <th>Handling</th>
             </tr>
           </thead>
@@ -411,6 +425,7 @@ function ResultsWithInvoiceLinks({
                       row.quantity
                     )}
                   </td>
+                  <td>{row.readQuantity}</td>
                   <td>
                     {isEditing ? (
                       <select
@@ -435,6 +450,22 @@ function ResultsWithInvoiceLinks({
                     ) : (
                       row.lineTotal
                     )}
+                  </td>
+                  <td>{row.controlPrice}</td>
+                  <td>
+                    <span
+                      className={
+                        row.controlStatus === "correct"
+                          ? styles.statusMatched
+                          : row.controlStatus === "review"
+                            ? styles.statusDeviation
+                            : row.controlStatus === "incomplete"
+                              ? styles.statusCalculated
+                              : styles.statusNeutral
+                      }
+                    >
+                      {getControlStatusLabel(row.controlStatus)}
+                    </span>
                   </td>
                   <td>
                     <button
