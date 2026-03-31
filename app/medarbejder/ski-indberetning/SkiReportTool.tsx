@@ -60,6 +60,17 @@ function escapeCsvValue(value: string) {
   return value;
 }
 
+function formatDateForCsv(value: string) {
+  const match = value.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+
+  if (!match) {
+    return value;
+  }
+
+  const [, day, month, year] = match;
+  return `${year}-${month}-${day}`;
+}
+
 function getMonthKeyFromIso(dateIso: string) {
   const match = dateIso.match(/^(\d{4})-(\d{2})-/);
   return match ? `${match[1]}-${match[2]}` : "ukendt";
@@ -127,7 +138,7 @@ function buildEditableCsv(rows: ReportRow[]) {
         row.unit,
         row.lineTotal,
         row.valuta,
-        row.fakturaDato,
+        formatDateForCsv(row.fakturaDato),
         row.skiContract,
         row.skiReportingCode,
         row.unitPrice,
