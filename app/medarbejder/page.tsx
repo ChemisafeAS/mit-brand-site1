@@ -138,16 +138,23 @@ export default async function MedarbejderPage({
         </article>
 
         <article className={styles.card}>
-          <h2 className={styles.cardTitle}>SKI-indberetning</h2>
+          <h2 className={styles.cardTitle}>Interne værktøj</h2>
           <p className={styles.cardText}>
-            Upload metadata-arket og månedens fakturaer, og få et testbart
-            indberetningsudtræk med automatisk match mod EAN og SKI-data.
+            Brug medarbejderområdets værktøjer til både SKI-indrapportering og
+            hurtig gennemgang af saltanalyser fra mail eller OneDrive.
           </p>
           <div className={styles.linkList}>
             <Link className={styles.linkItem} href="/medarbejder/ski-indberetning">
               <span className={styles.linkLabel}>Åbn SKI-værktøj</span>
               <p className={styles.linkText}>
                 Kør den første version af faktura-flowet direkte i medarbejderområdet.
+              </p>
+            </Link>
+            <Link className={styles.linkItem} href="/medarbejder/saltanalyser">
+              <span className={styles.linkLabel}>Åbn saltanalyser</span>
+              <p className={styles.linkText}>
+                Upload analyse-PDF&apos;er og få en oversigt over modtager,
+                følgeseddel, vandindhold og prøvedato.
               </p>
             </Link>
           </div>
