@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { parseSaltAnalysisPdf } from "@/lib/salt-analysis";
 import { initialSaltAnalysisState } from "@/app/medarbejder/saltanalyser/state";
-import { updateStoredSaltAnalysis, upsertSaltAnalyses } from "@/lib/salt-analysis-store";
+import { ingestSaltAnalysisFiles } from "@/lib/salt-analysis-ingest";
+import { updateStoredSaltAnalysis } from "@/lib/salt-analysis-store";
 import type { SaltAnalysisRow } from "@/lib/salt-analysis-shared";
-import { uploadSaltAnalysisFileToStorage } from "@/lib/salt-analysis-storage-server";
 
 export async function POST(request: Request) {
   try {
@@ -22,20 +21,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const rows = await Promise.all(
-      pdfFiles.map(async (file) => {
-        const [parsedRow, storagePath] = await Promise.all([
-          parseSaltAnalysisPdf(file),
-          uploadSaltAnalysisFileToStorage(file),
-        ]);
-
-        return {
-          ...parsedRow,
-          fileStoragePath: storagePath,
-        };
-      })
-    );
-    const persistedResult = await upsertSaltAnalyses(rows);
+    const persistedResult = await ingestSaltAnalysisFiles(pdfFiles);
 
     return NextResponse.json({
       error: "",

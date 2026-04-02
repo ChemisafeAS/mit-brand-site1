@@ -304,7 +304,7 @@ function ResultsTable({
           </div>
         </div>
         <div className={styles.resultsActions}>
-          <label className={styles.filterField}>
+          <label className={`${styles.filterField} ${styles.searchField}`}>
             <span className={styles.filterLabel}>Søg</span>
             <input
               className={styles.searchInput}
@@ -344,7 +344,7 @@ function ResultsTable({
               ))}
             </select>
           </label>
-          <label className={styles.filterField}>
+          <label className={`${styles.filterField} ${styles.recipientField}`}>
             <span className={styles.filterLabel}>Til</span>
             <select
               className={styles.filterSelect}

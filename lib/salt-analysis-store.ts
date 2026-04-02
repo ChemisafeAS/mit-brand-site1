@@ -12,7 +12,6 @@ import { createClient } from "@/lib/supabase/server";
 
 type SaltAnalysisDbRow = {
   analysis_date: string | null;
-  archived_at: string | null;
   created_at: string;
   delivery_note_number: string | null;
   file_name: string;
@@ -239,7 +238,6 @@ export async function getStoredSaltAnalyses() {
         [
           "id",
           "analysis_date",
-          "archived_at",
           "created_at",
           "delivery_note_number",
           "file_name",
@@ -256,7 +254,6 @@ export async function getStoredSaltAnalyses() {
           "water_content",
         ].join(", ")
       )
-      .is("archived_at", null)
       .order("sample_date", { ascending: false })
       .order("created_at", { ascending: false });
 
@@ -379,7 +376,6 @@ export async function reparseStoredSaltAnalyses() {
         .from("salt_analyses")
         .update({
           analysis_date: row.analysisDate || null,
-          archived_at: null,
           delivery_note_number: row.deliveryNoteNumber || null,
           file_name: row.fileName,
           parsed_field_count: parsedFieldCount,
@@ -470,7 +466,6 @@ export async function upsertSaltAnalyses(rows: SaltAnalysisRow[]) {
     const rowsToUpdate = payload.filter((row) => row.id);
     const rowsToInsert = payload.filter((row) => !row.id).map((row) => ({
       analysis_date: row.analysis_date,
-      archived_at: null,
       delivery_note_number: row.delivery_note_number,
       file_name: row.file_name,
       parsed_field_count: row.parsed_field_count,
@@ -490,7 +485,6 @@ export async function upsertSaltAnalyses(rows: SaltAnalysisRow[]) {
         .from("salt_analyses")
         .update({
           analysis_date: row.analysis_date,
-          archived_at: null,
           delivery_note_number: row.delivery_note_number,
           file_name: row.file_name,
           parsed_field_count: row.parsed_field_count,
@@ -562,7 +556,6 @@ export async function updateStoredSaltAnalysis(row: UpsertableSaltAnalysisRow) {
     const parsedFieldCount = countParsedSaltAnalysisFields(row);
     const updatePayload = {
       analysis_date: row.analysisDate || null,
-      archived_at: null,
       delivery_note_number: row.deliveryNoteNumber || null,
       file_name: row.fileName,
       parsed_field_count: parsedFieldCount,
@@ -585,7 +578,6 @@ export async function updateStoredSaltAnalysis(row: UpsertableSaltAnalysisRow) {
         [
           "id",
           "analysis_date",
-          "archived_at",
           "created_at",
           "delivery_note_number",
           "file_name",
@@ -616,65 +608,5 @@ export async function updateStoredSaltAnalysis(row: UpsertableSaltAnalysisRow) {
     throw new Error(
       error instanceof Error ? error.message : "Saltanalysen kunne ikke opdateres."
     );
-  }
-}
-
-export async function archiveSaltAnalysesOlderThan(months: number) {
-  if (!isSupabaseConfigured()) {
-    return {
-      archivedCount: 0,
-      notice: "Supabase er ikke sat op endnu.",
-    };
-  }
-
-  const safeMonths = Math.max(1, Math.floor(months));
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - safeMonths);
-
-  try {
-    const supabase = await createClient();
-    const { data: candidates, error: fetchError } = await supabase
-      .from("salt_analyses")
-      .select("id")
-      .is("archived_at", null)
-      .lt("created_at", cutoff.toISOString());
-
-    if (fetchError) {
-      return {
-        archivedCount: 0,
-        notice: "Kunne ikke finde analyser til arkivering.",
-      };
-    }
-
-    const ids = ((candidates ?? []) as Array<{ id: string }>).map((row) => row.id);
-
-    if (!ids.length) {
-      return {
-        archivedCount: 0,
-        notice: `Ingen analyser ældre end ${safeMonths} måneder skulle arkiveres.`,
-      };
-    }
-
-    const { error: updateError } = await supabase
-      .from("salt_analyses")
-      .update({ archived_at: new Date().toISOString() })
-      .in("id", ids);
-
-    if (updateError) {
-      return {
-        archivedCount: 0,
-        notice: "Arkiveringen kunne ikke gemmes i databasen.",
-      };
-    }
-
-    return {
-      archivedCount: ids.length,
-      notice: `${ids.length} analyser ældre end ${safeMonths} måneder er arkiveret.`,
-    };
-  } catch {
-    return {
-      archivedCount: 0,
-      notice: "Der opstod en fejl under arkivering af gamle analyser.",
-    };
   }
 }

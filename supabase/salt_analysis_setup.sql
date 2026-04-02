@@ -15,7 +15,6 @@ create table if not exists public.salt_analyses (
   source_excerpt text,
   status text not null default 'tjek',
   parsed_field_count integer not null default 0,
-  archived_at timestamptz,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
@@ -58,9 +57,6 @@ add column if not exists status text;
 
 alter table public.salt_analyses
 add column if not exists parsed_field_count integer;
-
-alter table public.salt_analyses
-add column if not exists archived_at timestamptz;
 
 alter table public.salt_analyses
 add column if not exists created_at timestamptz;
@@ -120,9 +116,6 @@ on public.salt_analyses(sample_date);
 create index if not exists salt_analyses_report_number_idx
 on public.salt_analyses(report_number);
 
-create index if not exists salt_analyses_archived_at_idx
-on public.salt_analyses(archived_at);
-
 create unique index if not exists salt_analyses_source_key_idx
 on public.salt_analyses(source_key);
 
@@ -133,23 +126,6 @@ as $$
 begin
   new.updated_at = timezone('utc', now());
   return new;
-end;
-$$;
-
-create or replace function public.archive_old_salt_analyses(months_old integer default 12)
-returns integer
-language plpgsql
-as $$
-declare
-  archived_count integer;
-begin
-  update public.salt_analyses
-  set archived_at = timezone('utc', now())
-  where archived_at is null
-    and updated_at < timezone('utc', now()) - make_interval(months => greatest(months_old, 1));
-
-  get diagnostics archived_count = row_count;
-  return archived_count;
 end;
 $$;
 

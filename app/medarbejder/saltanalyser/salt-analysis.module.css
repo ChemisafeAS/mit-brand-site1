@@ -163,9 +163,9 @@
 }
 
 .searchInput {
-  min-width: 320px;
-  padding: 12px 16px;
-  border-radius: 18px;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: 14px;
   border-color: #d7dee9;
   background:
     linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(255, 255, 255, 1));
@@ -185,8 +185,18 @@
 }
 
 .resultsActions {
+  display: grid;
+  grid-template-columns: minmax(240px, 360px) 110px 110px minmax(180px, 260px) auto;
   align-items: flex-end;
-  justify-content: flex-end;
+  justify-content: end;
+}
+
+.searchField {
+  min-width: 0;
+}
+
+.recipientField {
+  min-width: 0;
 }
 
 .topFilters {
@@ -375,6 +385,17 @@
 
   .sectionHeader {
     flex-direction: column;
+  }
+
+  .resultsActions {
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+    justify-content: stretch;
+  }
+
+  .searchField,
+  .recipientField {
+    grid-column: auto;
   }
 
   .summaryGrid {
