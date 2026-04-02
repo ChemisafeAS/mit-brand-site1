@@ -181,6 +181,18 @@ function findPercentNearLabels(text: string, labels: string[]) {
   return normalizePercentValue(match?.[1] ?? "");
 }
 
+function findPercentNearLabelsLoose(text: string, labels: string[]) {
+  const labelPattern = labels.map(escapeRegex).join("|");
+  const match = text.match(
+    new RegExp(
+      `(?:${labelPattern})[\\s\\S]{0,80}?(-?\\d{1,2}(?:[.,'’]\\d{1,2})?\\s*%)`,
+      "i"
+    )
+  );
+
+  return normalizePercentValue(match?.[1] ?? "");
+}
+
 function normalizePercentValue(value: string) {
   return normalizeWhitespace(value)
     .replace(/[’']/g, ",")
@@ -308,6 +320,13 @@ function findReportNumber(text: string) {
 
 function extractDescriptionSampleType(text: string) {
   const normalizedText = normalizeWhitespace(text);
+
+  if (
+    /ds\/en\s*1097-5/i.test(normalizedText) ||
+    /vandindhold\s+in\s+situ/i.test(normalizedText)
+  ) {
+    return "Vandindhold";
+  }
 
   const knownSampleTypes = uniqueValues([
     /vandindhold/i.test(normalizedText) ? "Vandindhold" : "",
@@ -541,6 +560,7 @@ export async function parseSaltAnalysisPdf(
     findDateNearLabels(sourceText, ["analysedato", "analyse dato", "rapportdato", "dato"]);
   let waterContent =
     findPercentNearLabels(sourceText, ["vandindhold in situ"]) ||
+    findPercentNearLabelsLoose(sourceText, ["vandindhold in situ"]) ||
     findPercentNearLabels(sourceText, ["vandindhold", "fugt", "moisture", "h2o"]);
   let sampleType = buildSampleType(sourceText, stopLabels);
   const laboratory = findLabeledValue(
@@ -582,6 +602,7 @@ export async function parseSaltAnalysisPdf(
     if (!waterContent) {
       const ocrWaterContent =
         findPercentNearLabels(ocrText, ["vandindhold in situ"]) ||
+        findPercentNearLabelsLoose(ocrText, ["vandindhold in situ"]) ||
         findPercentNearLabels(ocrText, ["vandindhold", "fugt", "moisture", "h2o"]) ||
         normalizePercentValue(ocrText.match(/\b(\d{1,2}[.,'’]\d)\s*%/)?.[0] ?? "");
 
