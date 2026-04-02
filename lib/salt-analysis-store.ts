@@ -8,7 +8,7 @@ import {
 import { parseSaltAnalysisPdf } from "@/lib/salt-analysis";
 import { SALT_ANALYSIS_BUCKET } from "@/lib/salt-analysis-storage";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 type SaltAnalysisDbRow = {
   analysis_date: string | null;
@@ -160,7 +160,7 @@ async function findExistingSaltAnalysisRows(rows: SaltAnalysisRow[]) {
     return [] as SaltAnalysisIdentityRow[];
   }
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const matches = new Map<string, SaltAnalysisIdentityRow>();
 
   if (fileNames.length) {
@@ -231,7 +231,7 @@ export async function getStoredSaltAnalyses() {
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase
       .from("salt_analyses")
       .select(
@@ -304,7 +304,7 @@ export async function reparseStoredSaltAnalyses() {
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase
       .from("salt_analyses")
       .select(
@@ -427,7 +427,7 @@ export async function upsertSaltAnalyses(rows: SaltAnalysisRow[]) {
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const existingRows = await findExistingSaltAnalysisRows(rows);
     const existingByFileName = new Map(
       existingRows.map((row) => [row.file_name.trim().toLowerCase(), row] as const)
@@ -552,7 +552,7 @@ export async function updateStoredSaltAnalysis(row: UpsertableSaltAnalysisRow) {
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const parsedFieldCount = countParsedSaltAnalysisFields(row);
     const updatePayload = {
       analysis_date: row.analysisDate || null,

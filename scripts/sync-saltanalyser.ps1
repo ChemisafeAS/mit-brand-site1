@@ -72,11 +72,12 @@ function Save-State {
   $State | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Path -Encoding UTF8
 }
 
-function Upload-Batch {
+function Invoke-JsonApi {
   param(
-    [System.Collections.Generic.List[System.IO.FileInfo]]$Files,
+    [string]$Method,
     [string]$BaseUrl,
-    [string]$Token
+    [string]$Token,
+    [object]$Body
   )
 
   $handler = [System.Net.Http.HttpClientHandler]::new()
@@ -86,39 +87,101 @@ function Upload-Batch {
     [System.Net.Http.Headers.AuthenticationHeaderValue]::new("Bearer", $Token)
 
   try {
-    $content = [System.Net.Http.MultipartFormDataContent]::new()
-    $streams = [System.Collections.Generic.List[System.IDisposable]]::new()
+    $url = $BaseUrl.TrimEnd("/") + "/api/saltanalyser/ingest"
+    $json = $Body | ConvertTo-Json -Depth 10
+    $content = [System.Net.Http.StringContent]::new(
+      $json,
+      [System.Text.Encoding]::UTF8,
+      "application/json"
+    )
+    $request = [System.Net.Http.HttpRequestMessage]::new(
+      [System.Net.Http.HttpMethod]::$Method,
+      $url
+    )
+    $request.Content = $content
+
+    $response = $client.SendAsync($request).GetAwaiter().GetResult()
+    $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+
+    if (-not $response.IsSuccessStatusCode) {
+      throw "API-kald fejlede ($([int]$response.StatusCode)): $body"
+    }
+
+    return $body | ConvertFrom-Json
+  }
+  finally {
+    $client.Dispose()
+  }
+}
+
+function Upload-FileToSignedUrl {
+  param(
+    [System.IO.FileInfo]$File,
+    [string]$SignedUrl
+  )
+
+  $handler = [System.Net.Http.HttpClientHandler]::new()
+  $client = [System.Net.Http.HttpClient]::new($handler)
+  $client.Timeout = [TimeSpan]::FromMinutes(15)
+
+  try {
+    $stream = [System.IO.File]::OpenRead($File.FullName)
 
     try {
-      foreach ($file in $Files) {
-        $stream = [System.IO.File]::OpenRead($file.FullName)
-        $streams.Add($stream)
+      $content = [System.Net.Http.StreamContent]::new($stream)
+      $content.Headers.ContentType =
+        [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/pdf")
 
-        $fileContent = [System.Net.Http.StreamContent]::new($stream)
-        $fileContent.Headers.ContentType =
-          [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/pdf")
-        $content.Add($fileContent, "analyses", $file.Name)
-      }
-
-      $url = $BaseUrl.TrimEnd("/") + "/api/saltanalyser/ingest"
-      $response = $client.PostAsync($url, $content).GetAwaiter().GetResult()
+      $response = $client.PutAsync($SignedUrl, $content).GetAwaiter().GetResult()
       $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
 
       if (-not $response.IsSuccessStatusCode) {
-        throw "Upload fejlede ($([int]$response.StatusCode)): $body"
+        throw "Direkte upload til Supabase fejlede ($([int]$response.StatusCode)): $body"
       }
-
-      return $body | ConvertFrom-Json
     }
     finally {
-      foreach ($stream in $streams) {
-        $stream.Dispose()
-      }
-      $content.Dispose()
+      $stream.Dispose()
     }
   }
   finally {
     $client.Dispose()
+  }
+}
+
+function Sync-Batch {
+  param(
+    [System.Collections.Generic.List[System.IO.FileInfo]]$Files,
+    [string]$BaseUrl,
+    [string]$Token
+  )
+
+  $prepareResponse = Invoke-JsonApi -Method "Post" -BaseUrl $BaseUrl -Token $Token -Body @{
+    mode = "prepare-upload"
+    files = @($Files | ForEach-Object {
+      @{
+        fileName = $_.Name
+      }
+    })
+  }
+
+  foreach ($uploadTarget in $prepareResponse.files) {
+    $file = $Files | Where-Object { $_.Name -eq $uploadTarget.fileName } | Select-Object -First 1
+
+    if ($null -eq $file) {
+      throw "Kunne ikke finde lokal fil til upload-planen: $($uploadTarget.fileName)"
+    }
+
+    Upload-FileToSignedUrl -File $file -SignedUrl $uploadTarget.signedUrl
+  }
+
+  return Invoke-JsonApi -Method "Post" -BaseUrl $BaseUrl -Token $Token -Body @{
+    mode = "ingest-uploaded"
+    files = @($prepareResponse.files | ForEach-Object {
+      @{
+        fileName = $_.fileName
+        storagePath = $_.storagePath
+      }
+    })
   }
 }
 
@@ -161,7 +224,7 @@ for ($index = 0; $index -lt $pending.Count; $index += $BatchSize) {
     $chunk.Add($pending[$innerIndex])
   }
 
-  $result = Upload-Batch -Files $chunk -BaseUrl $ApiBaseUrl -Token $SyncToken
+  $result = Sync-Batch -Files $chunk -BaseUrl $ApiBaseUrl -Token $SyncToken
 
   foreach ($file in $chunk) {
     $state[$file.FullName] = Get-FileFingerprint -File $file
