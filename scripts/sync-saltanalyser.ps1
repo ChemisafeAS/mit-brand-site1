@@ -8,6 +8,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+try {
+  Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
+}
+catch {
+  throw "System.Net.Http kunne ikke indlaeses i denne PowerShell-session."
+}
+
 if ([string]::IsNullOrWhiteSpace($SyncToken)) {
   throw "SyncToken mangler. Sæt SALT_ANALYSIS_SYNC_TOKEN eller send -SyncToken med."
 }

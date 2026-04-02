@@ -6,10 +6,11 @@ import { uploadSaltAnalysisFileToStorage } from "@/lib/salt-analysis-storage-ser
 export async function ingestSaltAnalysisFiles(pdfFiles: File[]) {
   const rows = await Promise.all(
     pdfFiles.map(async (file) => {
-      const [parsedRow, storagePath] = await Promise.all([
-        parseSaltAnalysisPdf(file),
-        uploadSaltAnalysisFileToStorage(file),
-      ]);
+      const parsedRow = await parseSaltAnalysisPdf(file);
+      const storagePath = await uploadSaltAnalysisFileToStorage(
+        file,
+        parsedRow.reportNumber
+      );
 
       return {
         ...parsedRow,

@@ -8,13 +8,29 @@ export function sanitizeSaltAnalysisStorageSegment(value: string) {
     .replace(/^[-./]+|[-./]+$/g, "");
 }
 
-export function getStoragePathForSaltAnalysis(fileName: string) {
-  const timestamp = new Date().toISOString().slice(0, 10);
-  const safeFileName =
+function ensurePdfExtension(value: string) {
+  return value.toLowerCase().endsWith(".pdf") ? value : `${value}.pdf`;
+}
+
+function sanitizeFileName(fileName: string) {
+  return (
     fileName
       .split("/")
       .map((segment) => sanitizeSaltAnalysisStorageSegment(segment) || "file")
-      .join("/") || "analyse.pdf";
+      .join("/") || "analyse.pdf"
+  );
+}
 
-  return `${timestamp}/${crypto.randomUUID()}-${safeFileName}`;
+export function getStoragePathForSaltAnalysis(fileName: string, reportNumber?: string) {
+  const normalizedReportNumber = reportNumber?.trim();
+
+  if (normalizedReportNumber) {
+    const safeReportNumber = ensurePdfExtension(
+      sanitizeSaltAnalysisStorageSegment(normalizedReportNumber) || "analyse"
+    );
+
+    return `reports/${safeReportNumber}`;
+  }
+
+  return `files/${ensurePdfExtension(sanitizeFileName(fileName))}`;
 }

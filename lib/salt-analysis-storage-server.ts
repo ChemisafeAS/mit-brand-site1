@@ -6,12 +6,12 @@ import {
   SALT_ANALYSIS_BUCKET,
 } from "@/lib/salt-analysis-storage";
 
-export async function uploadSaltAnalysisFileToStorage(file: File) {
+export async function uploadSaltAnalysisFileToStorage(file: File, reportNumber?: string) {
   const supabase = await createClient();
-  const storagePath = getStoragePathForSaltAnalysis(file.name);
+  const storagePath = getStoragePathForSaltAnalysis(file.name, reportNumber);
   const { error } = await supabase.storage.from(SALT_ANALYSIS_BUCKET).upload(storagePath, file, {
     cacheControl: "3600",
-    upsert: false,
+    upsert: true,
     contentType: file.type || "application/pdf",
   });
 
