@@ -185,7 +185,7 @@ function findPercentNearLabelsLoose(text: string, labels: string[]) {
   const labelPattern = labels.map(escapeRegex).join("|");
   const match = text.match(
     new RegExp(
-      `(?:${labelPattern})[\\s\\S]{0,220}?(-?\\d{1,2}(?:[.,'’]\\d{1,2})?\\s*%)`,
+      `(?:${labelPattern})[\\s\\S]{0,80}?(-?\\d{1,2}(?:[.,'’]\\d{1,2})?\\s*%)`,
       "i"
     )
   );
@@ -207,7 +207,6 @@ function findWaterContentValue(text: string) {
   const directMatch =
     findPercentNearLabels(text, ["vandindhold in situ"]) ||
     findPercentNearLabelsLoose(text, ["vandindhold in situ"]) ||
-    findPercentNearLabels(text, ["vandindhold", "fugt", "moisture", "h2o"]) ||
     findPercentNearLabels(text, ["wnat"]) ||
     findPercentNearLabelsLoose(text, ["wnat"]);
 
@@ -216,20 +215,20 @@ function findWaterContentValue(text: string) {
   }
 
   const inferredFromInSitu = text.match(
-    /vandindhold\s+in\s+situ[\s\S]{0,220}?(\d{2})\s*%/i
+    /vandindhold\s+in\s+situ[\s\S]{0,40}?(\d{2})\s*%(?=[\sA-Za-z]|$)/i
   )?.[1];
 
   if (inferredFromInSitu) {
     return inferPercentWithoutSeparator(inferredFromInSitu);
   }
 
-  const inferredFromWnat = text.match(/wnat[\s\S]{0,80}?(\d{2})\s*%/i)?.[1];
+  const inferredFromWnat = text.match(/wnat[\s\S]{0,20}?(\d{2})\s*%(?=[\sA-Za-z]|$)/i)?.[1];
 
   if (inferredFromWnat) {
     return inferPercentWithoutSeparator(inferredFromWnat);
   }
 
-  return normalizePercentValue(text.match(/\b(\d{1,2}[.,'’]\d)\s*%/)?.[0] ?? "");
+  return "";
 }
 
 function normalizePercentValue(value: string) {
