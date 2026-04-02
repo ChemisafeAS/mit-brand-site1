@@ -28,12 +28,12 @@ export async function ingestSaltAnalysisFiles(pdfFiles: File[]) {
 }
 
 export async function ingestSaltAnalysisStorageFiles(
-  files: { fileName: string; storagePath: string }[]
+  files: { fileName: string; ocrText?: string; storagePath: string }[]
 ) {
   const rows = await Promise.all(
-    files.map(async ({ fileName, storagePath }) => {
+    files.map(async ({ fileName, ocrText, storagePath }) => {
       const file = await downloadSaltAnalysisFileFromStorage(storagePath, fileName);
-      const parsedRow = await parseSaltAnalysisPdf(file);
+      const parsedRow = await parseSaltAnalysisPdf(file, ocrText);
       const canonicalStoragePath = getStoragePathForSaltAnalysis(
         file.name,
         parsedRow.reportNumber

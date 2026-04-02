@@ -23,6 +23,34 @@ if (-not (Test-Path -LiteralPath $SourceDir)) {
   throw "Kildemappen blev ikke fundet: $SourceDir"
 }
 
+function Resolve-ToolPath {
+  param(
+    [string]$CommandName,
+    [string[]]$FallbackPaths
+  )
+
+  $command = Get-Command $CommandName -ErrorAction SilentlyContinue | Select-Object -First 1
+
+  if ($command) {
+    return $command.Source
+  }
+
+  foreach ($path in $FallbackPaths) {
+    if (Test-Path -LiteralPath $path) {
+      return $path
+    }
+  }
+
+  return $null
+}
+
+$PdfToPpmPath = Resolve-ToolPath -CommandName "pdftoppm" -FallbackPaths @(
+  "C:\Users\Frederik\AppData\Local\Microsoft\WinGet\Packages\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\poppler-25.07.0\Library\bin\pdftoppm.exe"
+)
+$TesseractPath = Resolve-ToolPath -CommandName "tesseract" -FallbackPaths @(
+  "C:\Program Files\Tesseract-OCR\tesseract.exe"
+)
+
 function Get-FileFingerprint {
   param([System.IO.FileInfo]$File)
 
@@ -70,6 +98,43 @@ function Save-State {
   }
 
   $State | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
+function Get-OcrTextFromPdf {
+  param([System.IO.FileInfo]$File)
+
+  if ([string]::IsNullOrWhiteSpace($PdfToPpmPath) -or [string]::IsNullOrWhiteSpace($TesseractPath)) {
+    return ""
+  }
+
+  $tempDirectory = Join-Path $env:TEMP ("salt-ocr-" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Path $tempDirectory -Force | Out-Null
+  $prefix = Join-Path $tempDirectory "page"
+
+  try {
+    & $PdfToPpmPath -png -f 1 -l 3 $File.FullName $prefix | Out-Null
+    $images = Get-ChildItem -LiteralPath $tempDirectory -Filter "page-*.png" |
+      Sort-Object Name
+    $ocrRuns = New-Object System.Collections.Generic.List[string]
+
+    foreach ($image in $images) {
+      foreach ($psm in @("6", "11")) {
+        $ocrText = & $TesseractPath $image.FullName stdout -l eng --psm $psm 2>$null
+
+        if (-not [string]::IsNullOrWhiteSpace($ocrText)) {
+          $ocrRuns.Add($ocrText)
+        }
+      }
+    }
+
+    return ($ocrRuns -join " ").Trim()
+  }
+  catch {
+    return ""
+  }
+  finally {
+    Remove-Item -LiteralPath $tempDirectory -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 
 function Invoke-JsonApi {
@@ -155,6 +220,12 @@ function Sync-Batch {
     [string]$Token
   )
 
+  $ocrTextByFilePath = @{}
+
+  foreach ($file in $Files) {
+    $ocrTextByFilePath[$file.FullName] = Get-OcrTextFromPdf -File $file
+  }
+
   $prepareResponse = Invoke-JsonApi -Method "Post" -BaseUrl $BaseUrl -Token $Token -Body @{
     mode = "prepare-upload"
     files = @($Files | ForEach-Object {
@@ -177,9 +248,13 @@ function Sync-Batch {
   return Invoke-JsonApi -Method "Post" -BaseUrl $BaseUrl -Token $Token -Body @{
     mode = "ingest-uploaded"
     files = @($prepareResponse.files | ForEach-Object {
+      $uploadTarget = $_
+      $matchingFile = $Files | Where-Object { $_.Name -eq $uploadTarget.fileName } | Select-Object -First 1
+
       @{
-        fileName = $_.fileName
-        storagePath = $_.storagePath
+        fileName = $uploadTarget.fileName
+        ocrText = if ($matchingFile) { $ocrTextByFilePath[$matchingFile.FullName] } else { "" }
+        storagePath = $uploadTarget.storagePath
       }
     })
   }

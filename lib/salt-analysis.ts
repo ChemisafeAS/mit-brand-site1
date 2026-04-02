@@ -27,6 +27,15 @@ function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function normalizeOcrText(value: string) {
+  return normalizeWhitespace(value)
+    .replace(/prgv/gi, "prov")
+    .replace(/préve/gi, "prove")
+    .replace(/provnings/gi, "provnings")
+    .replace(/kornstorrelses/gi, "kornstorrelses")
+    .replace(/folgeseddel/gi, "folgeseddel");
+}
+
 function uniqueValues(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
@@ -479,7 +488,10 @@ async function runOcrFallback(buffer: Buffer, pageCount: number) {
   }
 }
 
-export async function parseSaltAnalysisPdf(file: File): Promise<SaltAnalysisRow> {
+export async function parseSaltAnalysisPdf(
+  file: File,
+  providedOcrText = ""
+): Promise<SaltAnalysisRow> {
   const buffer = Buffer.from(await file.arrayBuffer());
   const sourceText = extractPdfText(buffer);
   const pageCount = estimatePdfPageCount(buffer);
@@ -539,13 +551,17 @@ export async function parseSaltAnalysisPdf(file: File): Promise<SaltAnalysisRow>
   );
   const notes = buildNotes(sourceText);
 
-  let ocrText = "";
+  let ocrText = normalizeOcrText(providedOcrText);
 
   if (!sampleType || !waterContent || !recipient || !reportNumber || !deliveryNoteNumber || !sampleDate) {
-    ocrText = await runOcrFallback(buffer, pageCount);
+    if (!ocrText) {
+      ocrText = normalizeOcrText(await runOcrFallback(buffer, pageCount));
+    }
 
     if (!recipient) {
-      recipient = fileFallback.recipient || recipient;
+      recipient = findLabeledValue(ocrText, ["rekvirent", "kunde", "modtager", "analyseret for"], stopLabels) ||
+        fileFallback.recipient ||
+        recipient;
     }
 
     if (!reportNumber) {

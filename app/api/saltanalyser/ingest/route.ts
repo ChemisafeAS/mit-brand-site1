@@ -17,6 +17,7 @@ type PrepareUploadRequest = {
 type IngestUploadedRequest = {
   files: {
     fileName: string;
+    ocrText?: string;
     storagePath: string;
   }[];
   mode: "ingest-uploaded";
