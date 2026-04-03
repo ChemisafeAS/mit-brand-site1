@@ -9,6 +9,10 @@ param(
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue | Out-Null
 
+foreach ($proxyVar in @("ALL_PROXY", "HTTP_PROXY", "HTTPS_PROXY", "GIT_HTTP_PROXY", "GIT_HTTPS_PROXY")) {
+  Set-Item -Path "Env:$proxyVar" -Value "" -ErrorAction SilentlyContinue
+}
+
 try {
   Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
 }
@@ -213,6 +217,7 @@ function Invoke-JsonApi {
   )
 
   $handler = [System.Net.Http.HttpClientHandler]::new()
+  $handler.UseProxy = $false
   $client = [System.Net.Http.HttpClient]::new($handler)
   $client.Timeout = [TimeSpan]::FromMinutes(15)
   $client.DefaultRequestHeaders.Authorization =
@@ -253,6 +258,7 @@ function Upload-FileToSignedUrl {
   )
 
   $handler = [System.Net.Http.HttpClientHandler]::new()
+  $handler.UseProxy = $false
   $client = [System.Net.Http.HttpClient]::new($handler)
   $client.Timeout = [TimeSpan]::FromMinutes(15)
 
