@@ -36,6 +36,36 @@ function normalizeOcrText(value: string) {
     .replace(/folgeseddel/gi, "folgeseddel");
 }
 
+function normalizeRecipientValue(value: string) {
+  return normalizeWhitespace(value)
+    .replace(/\s+(?:[\w.+-]+@[\w.-]+\.\w+.*)$/i, "")
+    .replace(/\bNgrskovvej\b/gi, "Nørskovvej")
+    .replace(/\bN¢rskovvej\b/gi, "Nørskovvej")
+    .replace(/\bSdlsted\b/gi, "Sølsted")
+    .replace(/\bTonder\b/gi, "Tønder")
+    .replace(/\bKirkegardsvej\b/gi, "Kirkegårdsvej")
+    .replace(/\bAbenra\b/gi, "Aabenraa")
+    .replace(/\bHillergd\b/gi, "Hillerød")
+    .replace(/\bHillerd\b/gi, "Hillerød")
+    .replace(/\bFrederiksveerksgade\b/gi, "Frederiksværksgade")
+    .replace(/\bFrederiksvaerksgade\b/gi, "Frederiksværksgade")
+    .replace(/\bMaterialegarden\b/gi, "Materialegården")
+    .replace(/\bHumlebzek\b/gi, "Humlebæk")
+    .replace(/\bK liplev\b/g, "Kliplev")
+    .replace(/\s+,/g, ",");
+}
+
+function splitProvidedOcrPages(value: string) {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(/\[\[PAGE_BREAK\]\]/g)
+    .map((part) => normalizeOcrText(part))
+    .filter(Boolean);
+}
+
 function uniqueValues(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
@@ -203,15 +233,32 @@ function inferPercentWithoutSeparator(value: string) {
   return `${digits[0]},${digits[1]}%`;
 }
 
+function normalizeWaterPercentValue(value: string) {
+  const normalized = normalizePercentValue(value);
+  const wholeNumberMatch = normalized.match(/^(-?\d{2})\s*%$/);
+
+  if (!wholeNumberMatch) {
+    return normalized;
+  }
+
+  return inferPercentWithoutSeparator(wholeNumberMatch[1]) || normalized;
+}
+
 function findWaterContentValue(text: string) {
+  if (!text) {
+    return "";
+  }
+
   const directMatch =
+    text.match(/vandindhold\s+in\s+situ(?:\s+wnat)?[\s\S]{0,120}?(-?\d{1,2}(?:[.,'â€™]\d{1,2})?\s*%)/i)?.[1] ||
+    text.match(/wnat[\s\S]{0,80}?(-?\d{1,2}(?:[.,'â€™]\d{1,2})?\s*%)/i)?.[1] ||
     findPercentNearLabels(text, ["vandindhold in situ"]) ||
     findPercentNearLabelsLoose(text, ["vandindhold in situ"]) ||
     findPercentNearLabels(text, ["wnat"]) ||
     findPercentNearLabelsLoose(text, ["wnat"]);
 
   if (directMatch) {
-    return directMatch;
+    return normalizeWaterPercentValue(directMatch);
   }
 
   const inferredFromInSitu = text.match(
@@ -359,22 +406,13 @@ function findReportNumber(text: string) {
 function extractDescriptionSampleType(text: string) {
   const normalizedText = normalizeWhitespace(text);
 
-  if (
-    /ds\/en\s*1097-5/i.test(normalizedText) ||
-    /vandindhold\s+in\s+situ/i.test(normalizedText)
-  ) {
-    return "Vandindhold";
+  // Side 1/metodereferencen er mere pålidelig end generiske felter fra skemaer på side 2/3.
+  if (/ds\/en\s*1235/i.test(normalizedText) || /kornstørrelsesfordeling/i.test(normalizedText)) {
+    return "Kornstørrelsesfordeling";
   }
 
-  const knownSampleTypes = uniqueValues([
-    /vandindhold/i.test(normalizedText) ? "Vandindhold" : "",
-    /kornstørrelsesfordeling/i.test(normalizedText) || /kornst/i.test(normalizedText)
-      ? "Kornstørrelsesfordeling"
-      : "",
-  ]);
-
-  if (knownSampleTypes.length) {
-    return knownSampleTypes.join(" + ");
+  if (/ds\/en\s*1097-5/i.test(normalizedText) || /vandindhold\s*\(2013\)/i.test(normalizedText)) {
+    return "Vandindhold";
   }
 
   const directDescriptionMatch = normalizedText.match(
@@ -471,8 +509,8 @@ function normalizeLookupValue(value: string) {
 function inferSampleTypeFromOcr(ocrText: string, pageCount: number, waterContent: string) {
   const normalized = normalizeLookupValue(ocrText);
   const inferredTypes = uniqueValues([
-    normalized.includes("vandindhold") || Boolean(waterContent) ? "Vandindhold" : "",
-    normalized.includes("kornst") || normalized.includes("korn") || normalized.includes("sigt")
+    normalized.includes("1097 5") ? "Vandindhold" : "",
+    normalized.includes("1235") || normalized.includes("kornst") || normalized.includes("korn") || normalized.includes("sigt")
       ? "Kornstørrelsesfordeling"
       : "",
   ]);
@@ -553,6 +591,9 @@ export async function parseSaltAnalysisPdf(
   const sourceText = extractPdfText(buffer);
   const pageCount = estimatePdfPageCount(buffer);
   const fileFallback = parseFileNameFallback(file.name);
+  const providedOcrPages = splitProvidedOcrPages(providedOcrText);
+  const providedOcrPageOne = providedOcrPages[0] ?? "";
+  const providedOcrLaterPages = providedOcrPages.slice(1).join(" ");
   const stopLabels = [
     "rekvirent",
     "kunde",
@@ -583,21 +624,27 @@ export async function parseSaltAnalysisPdf(
     "beskrivelse",
   ];
 
-  let recipient =
+  let recipient = normalizeRecipientValue(
     findLabeledValue(sourceText, ["rekvirent", "kunde", "modtager", "analyseret for"], stopLabels) ||
-    fileFallback.recipient;
+      findLabeledValue(providedOcrPageOne, ["rekvirent", "kunde", "modtager", "analyseret for"], stopLabels) ||
+      fileFallback.recipient
+  );
   let reportNumber = findReportNumber(sourceText) || fileFallback.reportNumber;
   let deliveryNoteNumber = findFiveDigitDeliveryNote(sourceText) || fileFallback.deliveryNoteNumber;
   const batchNumber = findReference(sourceText, ["batch nr", "batch", "lot nr", "lot"]);
   let sampleDate =
     findDateNearLabels(sourceText, ["prøvestart", "start"]) ||
     findDateNearLabels(sourceText, ["prøvedato", "prøve dato", "udtaget"]) ||
+    findDateNearLabels(providedOcrPageOne, ["prøvestart", "start"]) ||
+    findDateNearLabels(providedOcrPageOne, ["prøvedato", "prøve dato", "udtaget"]) ||
     fileFallback.sampleDate;
   const analysisDate =
     findDateNearLabels(sourceText, ["prøveslut", "slut"]) ||
     findDateNearLabels(sourceText, ["analysedato", "analyse dato", "rapportdato", "dato"]);
-  let waterContent = findWaterContentValue(sourceText);
-  let sampleType = buildSampleType(sourceText, stopLabels);
+  let waterContent = findWaterContentValue(providedOcrLaterPages);
+  let sampleType =
+    buildSampleType(sourceText, stopLabels) ||
+    buildSampleType(providedOcrPageOne, stopLabels);
   const laboratory = findLabeledValue(
     sourceText,
     ["laboratorium", "lab", "analyseret af"],
@@ -613,10 +660,16 @@ export async function parseSaltAnalysisPdf(
       ocrText = normalizeOcrText(await runOcrFallback(buffer, pageCount));
     }
 
+    const fallbackOcrPages = splitProvidedOcrPages(ocrText);
+    const fallbackOcrPageOne = fallbackOcrPages[0] ?? ocrText;
+    const fallbackOcrLaterPages = fallbackOcrPages.length > 1 ? fallbackOcrPages.slice(1).join(" ") : ocrText;
+
     if (!recipient) {
-      recipient = findLabeledValue(ocrText, ["rekvirent", "kunde", "modtager", "analyseret for"], stopLabels) ||
-        fileFallback.recipient ||
-        recipient;
+      recipient = normalizeRecipientValue(
+        findLabeledValue(fallbackOcrPageOne, ["rekvirent", "kunde", "modtager", "analyseret for"], stopLabels) ||
+          fileFallback.recipient ||
+          recipient
+      );
     }
 
     if (!reportNumber) {
@@ -629,23 +682,23 @@ export async function parseSaltAnalysisPdf(
 
     if (!sampleDate) {
       sampleDate =
-        findDateNearLabels(ocrText, ["prøvestart", "start"]) ||
-        findDateNearLabels(ocrText, ["prøvedato", "prøve dato", "udtaget"]) ||
+        findDateNearLabels(fallbackOcrPageOne, ["prøvestart", "start"]) ||
+        findDateNearLabels(fallbackOcrPageOne, ["prøvedato", "prøve dato", "udtaget"]) ||
         sampleDate;
     }
 
     if (!waterContent) {
-      waterContent = findWaterContentValue(ocrText) || waterContent;
+      waterContent = findWaterContentValue(fallbackOcrLaterPages) || waterContent;
     }
 
     if (!sampleType) {
       sampleType =
-        buildSampleType(ocrText, stopLabels) ||
-        inferSampleTypeFromOcr(ocrText, pageCount, waterContent);
+        buildSampleType(fallbackOcrPageOne, stopLabels) ||
+        inferSampleTypeFromOcr(fallbackOcrPageOne, pageCount, waterContent);
     }
   }
 
-  if (!sampleType && waterContent) {
+  if (!sampleType && waterContent && /1097-5|vandindhold\s*\(2013\)/i.test(ocrText || sourceText)) {
     sampleType = "Vandindhold";
   }
 

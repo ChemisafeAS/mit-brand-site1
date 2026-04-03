@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue | Out-Null
 
 try {
   Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
@@ -111,23 +112,89 @@ function Get-OcrTextFromPdf {
   New-Item -ItemType Directory -Path $tempDirectory -Force | Out-Null
   $prefix = Join-Path $tempDirectory "page"
 
+  function Get-OcrPageText {
+    param(
+      [string]$ImagePath,
+      [string]$Psm
+    )
+
+    $ocrText = & $TesseractPath $ImagePath stdout -l eng --psm $Psm 2>$null
+    return [string]$ocrText
+  }
+
+  function Get-FocusedWaterZoneText {
+    param([string]$ImagePath)
+
+    $cropPath = [System.IO.Path]::ChangeExtension($ImagePath, ".water.png")
+    $bitmap = [System.Drawing.Bitmap]::FromFile($ImagePath)
+
+    try {
+      $x = [int]($bitmap.Width * 0.18)
+      $y = [int]($bitmap.Height * 0.73)
+      $width = [int]($bitmap.Width * 0.62)
+      $height = [int]($bitmap.Height * 0.17)
+
+      if ($x + $width -gt $bitmap.Width) { $width = $bitmap.Width - $x }
+      if ($y + $height -gt $bitmap.Height) { $height = $bitmap.Height - $y }
+
+      $rect = [System.Drawing.Rectangle]::new($x, $y, $width, $height)
+      $cropped = $bitmap.Clone($rect, $bitmap.PixelFormat)
+
+      try {
+        $cropped.Save($cropPath, [System.Drawing.Imaging.ImageFormat]::Png)
+      }
+      finally {
+        $cropped.Dispose()
+      }
+
+      $ocrRuns = New-Object System.Collections.Generic.List[string]
+      foreach ($psm in @("6", "11")) {
+        $zoneText = Get-OcrPageText -ImagePath $cropPath -Psm $psm
+        if (-not [string]::IsNullOrWhiteSpace($zoneText)) {
+          $ocrRuns.Add($zoneText)
+        }
+      }
+
+      return ($ocrRuns -join " ").Trim()
+    }
+    finally {
+      $bitmap.Dispose()
+      Remove-Item -LiteralPath $cropPath -ErrorAction SilentlyContinue
+    }
+  }
+
   try {
     & $PdfToPpmPath -png -f 1 -l 3 $File.FullName $prefix | Out-Null
     $images = Get-ChildItem -LiteralPath $tempDirectory -Filter "page-*.png" |
       Sort-Object Name
-    $ocrRuns = New-Object System.Collections.Generic.List[string]
+    $pageTexts = New-Object System.Collections.Generic.List[string]
 
     foreach ($image in $images) {
+      $ocrRuns = New-Object System.Collections.Generic.List[string]
+
       foreach ($psm in @("6", "11")) {
-        $ocrText = & $TesseractPath $image.FullName stdout -l eng --psm $psm 2>$null
+        $ocrText = Get-OcrPageText -ImagePath $image.FullName -Psm $psm
 
         if (-not [string]::IsNullOrWhiteSpace($ocrText)) {
           $ocrRuns.Add($ocrText)
         }
       }
+
+      $pageText = ($ocrRuns -join " ").Trim()
+
+      if ($image.Name -match "page-(\d+)\.png" -and [int]$matches[1] -ge 2) {
+        $waterZoneText = Get-FocusedWaterZoneText -ImagePath $image.FullName
+        if (-not [string]::IsNullOrWhiteSpace($waterZoneText)) {
+          $pageText = "$pageText [[WATER_ZONE]] $waterZoneText".Trim()
+        }
+      }
+
+      if (-not [string]::IsNullOrWhiteSpace($pageText)) {
+        $pageTexts.Add($pageText)
+      }
     }
 
-    return ($ocrRuns -join " ").Trim()
+    return ($pageTexts -join " [[PAGE_BREAK]] ").Trim()
   }
   catch {
     return ""
