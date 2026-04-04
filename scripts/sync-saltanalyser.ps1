@@ -216,38 +216,35 @@ function Invoke-JsonApi {
     [object]$Body
   )
 
-  $handler = [System.Net.Http.HttpClientHandler]::new()
-  $handler.UseProxy = $false
-  $client = [System.Net.Http.HttpClient]::new($handler)
-  $client.Timeout = [TimeSpan]::FromMinutes(15)
-  $client.DefaultRequestHeaders.Authorization =
-    [System.Net.Http.Headers.AuthenticationHeaderValue]::new("Bearer", $Token)
+  $url = $BaseUrl.TrimEnd("/") + "/api/saltanalyser/ingest"
+  $json = $Body | ConvertTo-Json -Depth 10
+  $headers = @{
+    Authorization = "Bearer $Token"
+  }
 
   try {
-    $url = $BaseUrl.TrimEnd("/") + "/api/saltanalyser/ingest"
-    $json = $Body | ConvertTo-Json -Depth 10
-    $content = [System.Net.Http.StringContent]::new(
-      $json,
-      [System.Text.Encoding]::UTF8,
-      "application/json"
-    )
-    $request = [System.Net.Http.HttpRequestMessage]::new(
-      [System.Net.Http.HttpMethod]::$Method,
-      $url
-    )
-    $request.Content = $content
+    return Invoke-RestMethod `
+      -Uri $url `
+      -Method $Method `
+      -Headers $headers `
+      -ContentType "application/json" `
+      -Body $json `
+      -TimeoutSec 900
+  }
+  catch {
+    if ($_.Exception.Response) {
+      $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+      try {
+        $responseBody = $reader.ReadToEnd()
+      }
+      finally {
+        $reader.Dispose()
+      }
 
-    $response = $client.SendAsync($request).GetAwaiter().GetResult()
-    $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-
-    if (-not $response.IsSuccessStatusCode) {
-      throw "API-kald fejlede ($([int]$response.StatusCode)): $body"
+      throw "API-kald fejlede: $responseBody"
     }
 
-    return $body | ConvertFrom-Json
-  }
-  finally {
-    $client.Dispose()
+    throw
   }
 }
 
@@ -308,8 +305,9 @@ function Sync-Batch {
     })
   }
 
-  foreach ($uploadTarget in $prepareResponse.files) {
-    $file = $Files | Where-Object { $_.Name -eq $uploadTarget.fileName } | Select-Object -First 1
+  for ($index = 0; $index -lt $prepareResponse.files.Count; $index++) {
+    $uploadTarget = $prepareResponse.files[$index]
+    $file = if ($index -lt $Files.Count) { $Files[$index] } else { $null }
 
     if ($null -eq $file) {
       throw "Kunne ikke finde lokal fil til upload-planen: $($uploadTarget.fileName)"
@@ -320,16 +318,18 @@ function Sync-Batch {
 
   return Invoke-JsonApi -Method "Post" -BaseUrl $BaseUrl -Token $Token -Body @{
     mode = "ingest-uploaded"
-    files = @($prepareResponse.files | ForEach-Object {
-      $uploadTarget = $_
-      $matchingFile = $Files | Where-Object { $_.Name -eq $uploadTarget.fileName } | Select-Object -First 1
+    files = @(
+      for ($index = 0; $index -lt $prepareResponse.files.Count; $index++) {
+        $uploadTarget = $prepareResponse.files[$index]
+        $matchingFile = if ($index -lt $Files.Count) { $Files[$index] } else { $null }
 
-      @{
-        fileName = $uploadTarget.fileName
-        ocrText = if ($matchingFile) { $ocrTextByFilePath[$matchingFile.FullName] } else { "" }
-        storagePath = $uploadTarget.storagePath
+        @{
+          fileName = if ($matchingFile) { $matchingFile.Name } else { $uploadTarget.fileName }
+          ocrText = if ($matchingFile) { $ocrTextByFilePath[$matchingFile.FullName] } else { "" }
+          storagePath = $uploadTarget.storagePath
+        }
       }
-    })
+    )
   }
 }
 
