@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string[]]$Files
 )
 
@@ -32,7 +32,21 @@ function Normalize-Text {
     return ""
   }
 
-  return ($Text -replace "\s+", " ").Trim()
+  return (($Text -replace "\s+", " ").Trim()) `
+    -replace "ÃƒÂ¦", "æ" `
+    -replace "ÃƒÂ¸", "ø" `
+    -replace "ÃƒÂ¥", "å" `
+    -replace "Ãƒâ€ ", "Æ" `
+    -replace "ÃƒËœ", "Ø" `
+    -replace "Ãƒâ€¦", "Å" `
+    -replace "Ã¦", "æ" `
+    -replace "Ã¸", "ø" `
+    -replace "Ã¥", "å" `
+    -replace "Ã†", "Æ" `
+    -replace "Ã˜", "Ø" `
+    -replace "Ã…", "Å" `
+    -replace "Ã‚Â¢", "ø" `
+    -replace "Â¢", "ø"
 }
 
 function Normalize-Recipient {
@@ -41,7 +55,7 @@ function Normalize-Recipient {
   return (Normalize-Text $Text) `
     -replace "\s+(?:[\w.+-]+@[\w.-]+\.\w+.*)$", "" `
     -replace "\bNgrskovvej\b", "Nørskovvej" `
-    -replace "\bN¢rskovvej\b", "Nørskovvej" `
+    -replace "\bNÂ¢rskovvej\b", "Nørskovvej" `
     -replace "\bSdlsted\b", "Sølsted" `
     -replace "\bTonder\b", "Tønder" `
     -replace "\bKirkegardsvej\b", "Kirkegårdsvej" `
@@ -54,6 +68,24 @@ function Normalize-Recipient {
     -replace "\bHumlebzek\b", "Humlebæk" `
     -replace "\bK liplev\b", "Kliplev" `
     -replace "\s+,", ","
+}
+
+function Normalize-RecipientDisplay {
+  param([string]$Text)
+
+  $normalized = Normalize-Recipient $Text
+
+  if ($normalized -match "Aabenraa") { return "Aabenraa Kommune" }
+  if ($normalized -match "Viborg") { return "Viborg Kommune" }
+  if ($normalized -match "Tønder|TÃ¸nder|TÃƒÂ¸nder") { return "Tønder Kommune" }
+  if ($normalized -match "Favrskov|Hinnerup") { return "Favrskov Kommune" }
+  if ($normalized -match "Fredericia") { return "Fredericia Kommune" }
+  if ($normalized -match "Skanderborg") { return "Vejdirektoratet Skanderborg" }
+  if ($normalized -match "Randers") { return "Vejdirektoratet Randers" }
+  if ($normalized -match "Lyngby") { return "Vejdirektoratet Lyngby" }
+  if ($normalized -match "Hillerød|HillerÃ¸d|HillerÃƒÂ¸d") { return "Vejdirektoratet Hillerød" }
+
+  return $normalized
 }
 
 function Get-OcrPageText {
@@ -189,10 +221,10 @@ function Extract-Recipient {
   )
 
   if ($match.Success) {
-    return Normalize-Recipient $match.Groups[1].Value
+    return Normalize-RecipientDisplay $match.Groups[1].Value
   }
 
-  return Normalize-Recipient ((Get-NameParts -FileName $FileName).recipient)
+  return Normalize-RecipientDisplay ((Get-NameParts -FileName $FileName).recipient)
 }
 
 function Extract-SampleDate {
@@ -308,3 +340,4 @@ $rows = foreach ($filePath in $Files) {
 }
 
 $rows | ConvertTo-Json -Depth 4
+

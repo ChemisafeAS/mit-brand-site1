@@ -27,8 +27,26 @@ function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function normalizeDanishMojibake(value: string) {
+  return value
+    .replaceAll("ÃƒÂ¦", "\u00e6")
+    .replaceAll("ÃƒÂ¸", "\u00f8")
+    .replaceAll("ÃƒÂ¥", "\u00e5")
+    .replaceAll("Ãƒâ€ ", "\u00c6")
+    .replaceAll("ÃƒËœ", "\u00d8")
+    .replaceAll("Ãƒâ€¦", "\u00c5")
+    .replaceAll("Ã¦", "\u00e6")
+    .replaceAll("Ã¸", "\u00f8")
+    .replaceAll("Ã¥", "\u00e5")
+    .replaceAll("Ã†", "\u00c6")
+    .replaceAll("Ã˜", "\u00d8")
+    .replaceAll("Ã…", "\u00c5")
+    .replaceAll("Ã‚Â¢", "\u00f8")
+    .replaceAll("Â¢", "\u00f8");
+}
+
 function normalizeOcrText(value: string) {
-  return normalizeWhitespace(value)
+  return normalizeDanishMojibake(normalizeWhitespace(value))
     .replace(/prgv/gi, "prov")
     .replace(/préve/gi, "prove")
     .replace(/provnings/gi, "provnings")
@@ -37,22 +55,55 @@ function normalizeOcrText(value: string) {
 }
 
 function normalizeRecipientValue(value: string) {
-  return normalizeWhitespace(value)
+  return normalizeDanishMojibake(normalizeWhitespace(value))
     .replace(/\s+(?:[\w.+-]+@[\w.-]+\.\w+.*)$/i, "")
-    .replace(/\bNgrskovvej\b/gi, "Nørskovvej")
-    .replace(/\bN¢rskovvej\b/gi, "Nørskovvej")
-    .replace(/\bSdlsted\b/gi, "Sølsted")
-    .replace(/\bTonder\b/gi, "Tønder")
-    .replace(/\bKirkegardsvej\b/gi, "Kirkegårdsvej")
+    .replace(/\bNgrskovvej\b/gi, "N\u00f8rskovvej")
+    .replace(/\bN¢rskovvej\b/gi, "N\u00f8rskovvej")
+    .replace(/\bSdlsted\b/gi, "S\u00f8lsted")
+    .replace(/\bTonder\b/gi, "T\u00f8nder")
+    .replace(/\bKirkegardsvej\b/gi, "Kirkeg\u00e5rdsvej")
     .replace(/\bAbenra\b/gi, "Aabenraa")
-    .replace(/\bHillergd\b/gi, "Hillerød")
-    .replace(/\bHillerd\b/gi, "Hillerød")
-    .replace(/\bFrederiksveerksgade\b/gi, "Frederiksværksgade")
-    .replace(/\bFrederiksvaerksgade\b/gi, "Frederiksværksgade")
-    .replace(/\bMaterialegarden\b/gi, "Materialegården")
-    .replace(/\bHumlebzek\b/gi, "Humlebæk")
+    .replace(/\bHillergd\b/gi, "Hiller\u00f8d")
+    .replace(/\bHillerd\b/gi, "Hiller\u00f8d")
+    .replace(/\bFrederiksveerksgade\b/gi, "Frederiksv\u00e6rksgade")
+    .replace(/\bFrederiksvaerksgade\b/gi, "Frederiksv\u00e6rksgade")
+    .replace(/\bMaterialegarden\b/gi, "Materialeg\u00e5rden")
+    .replace(/\bHumlebzek\b/gi, "Humleb\u00e6k")
     .replace(/\bK liplev\b/g, "Kliplev")
     .replace(/\s+,/g, ",");
+}
+
+function normalizeRecipientDisplay(value: string) {
+  const normalized = normalizeRecipientValue(value);
+
+  const municipalityPatterns: Array<[RegExp, string]> = [
+    [/\bAabenraa\b/i, "Aabenraa Kommune"],
+    [/\bViborg\b/i, "Viborg Kommune"],
+    [/\bTÃƒÂ¸nder\b|\bTÃ¸nder\b|\bTønder\b/i, "Tønder Kommune"],
+    [/\bFavrskov\b|\bHinnerup\b/i, "Favrskov Kommune"],
+    [/\bFredericia\b/i, "Fredericia Kommune"],
+  ];
+
+  for (const [pattern, label] of municipalityPatterns) {
+    if (pattern.test(normalized)) {
+      return label;
+    }
+  }
+
+  const vejdirektoratetCities: Array<[RegExp, string]> = [
+    [/\bSkanderborg\b/i, "Vejdirektoratet Skanderborg"],
+    [/\bRanders\b/i, "Vejdirektoratet Randers"],
+    [/\bLyngby\b/i, "Vejdirektoratet Lyngby"],
+    [/\bHillerÃƒÂ¸d\b|\bHillerÃ¸d\b|\bHillerød\b/i, "Vejdirektoratet Hillerød"],
+  ];
+
+  for (const [pattern, label] of vejdirektoratetCities) {
+    if (pattern.test(normalized)) {
+      return label;
+    }
+  }
+
+  return normalized;
 }
 
 function splitProvidedOcrPages(value: string) {
@@ -328,8 +379,8 @@ function findWaterContentValue(text: string) {
   }
 
   const directMatch =
-    text.match(/vandindhold\s+in\s+situ(?:\s+wnat)?[\s\S]{0,120}?(-?\d{1,2}(?:[.,'â€™]\d{1,2})?\s*%)/i)?.[1] ||
-    text.match(/wnat[\s\S]{0,80}?(-?\d{1,2}(?:[.,'â€™]\d{1,2})?\s*%)/i)?.[1] ||
+    text.match(/vandindhold\s+in\s+situ(?:\s+wnat)?[\s\S]{0,120}?(-?\d{1,2}(?:[.,'’]\d{1,2})?\s*%)/i)?.[1] ||
+    text.match(/wnat[\s\S]{0,80}?(-?\d{1,2}(?:[.,'’]\d{1,2})?\s*%)/i)?.[1] ||
     findPercentNearLabels(text, ["vandindhold in situ"]) ||
     findPercentNearLabelsLoose(text, ["vandindhold in situ"]) ||
     findPercentNearLabels(text, ["wnat"]) ||
@@ -745,7 +796,7 @@ export async function parseSaltAnalysisPdf(
     "beskrivelse",
   ];
 
-  let recipient = normalizeRecipientValue(
+  let recipient = normalizeRecipientDisplay(
     findLabeledValue(sourceText, ["rekvirent", "kunde", "modtager", "analyseret for"], stopLabels) ||
       findLabeledValue(providedOcrPageOne, ["rekvirent", "kunde", "modtager", "analyseret for"], stopLabels) ||
       fileFallback.recipient
@@ -786,7 +837,7 @@ export async function parseSaltAnalysisPdf(
     const fallbackOcrLaterPages = fallbackOcrPages.length > 1 ? fallbackOcrPages.slice(1).join(" ") : ocrText;
 
     if (!recipient) {
-      recipient = normalizeRecipientValue(
+      recipient = normalizeRecipientDisplay(
         findLabeledValue(fallbackOcrPageOne, ["rekvirent", "kunde", "modtager", "analyseret for"], stopLabels) ||
           fileFallback.recipient ||
           recipient
