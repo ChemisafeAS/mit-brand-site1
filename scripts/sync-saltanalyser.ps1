@@ -3,7 +3,8 @@ param(
   [string]$ApiBaseUrl = "https://example.com",
   [string]$SyncToken = "",
   [string]$StateFile = "$PSScriptRoot\sync-saltanalyser-state.json",
-  [int]$BatchSize = 4
+  [int]$BatchSize = 4,
+  [string]$TesseractLanguage = "dan+eng"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,6 +56,34 @@ $PdfToPpmPath = Resolve-ToolPath -CommandName "pdftoppm" -FallbackPaths @(
 $TesseractPath = Resolve-ToolPath -CommandName "tesseract" -FallbackPaths @(
   "C:\Program Files\Tesseract-OCR\tesseract.exe"
 )
+
+function Resolve-TesseractLanguage {
+  param([string]$RequestedLanguage)
+
+  if ([string]::IsNullOrWhiteSpace($RequestedLanguage) -or [string]::IsNullOrWhiteSpace($TesseractPath)) {
+    return "eng"
+  }
+
+  try {
+    $availableLanguages = & $TesseractPath --list-langs 2>$null | ForEach-Object { $_.Trim() }
+    $requestedParts = $RequestedLanguage.Split("+") | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    $missingParts = @($requestedParts | Where-Object { $availableLanguages -notcontains $_ })
+
+    if ($missingParts.Count -eq 0) {
+      return $RequestedLanguage
+    }
+
+    if ($availableLanguages -contains "eng") {
+      return "eng"
+    }
+  }
+  catch {
+  }
+
+  return $RequestedLanguage
+}
+
+$TesseractLanguage = Resolve-TesseractLanguage -RequestedLanguage $TesseractLanguage
 
 function Get-FileFingerprint {
   param([System.IO.FileInfo]$File)
@@ -122,7 +151,7 @@ function Get-OcrTextFromPdf {
       [string]$Psm
     )
 
-    $ocrText = & $TesseractPath $ImagePath stdout -l eng --psm $Psm 2>$null
+    $ocrText = & $TesseractPath $ImagePath stdout -l $TesseractLanguage --psm $Psm 2>$null
     return [string]$ocrText
   }
 
@@ -168,7 +197,7 @@ function Get-OcrTextFromPdf {
   }
 
   try {
-    & $PdfToPpmPath -png -f 1 -l 3 $File.FullName $prefix | Out-Null
+    & $PdfToPpmPath -png -r 220 -f 1 -l 4 $File.FullName $prefix | Out-Null
     $images = Get-ChildItem -LiteralPath $tempDirectory -Filter "page-*.png" |
       Sort-Object Name
     $pageTexts = New-Object System.Collections.Generic.List[string]

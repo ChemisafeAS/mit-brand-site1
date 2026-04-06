@@ -244,9 +244,87 @@ function normalizeWaterPercentValue(value: string) {
   return inferPercentWithoutSeparator(wholeNumberMatch[1]) || normalized;
 }
 
+function extractPercentFromWaterZoneText(value: string) {
+  const normalizedValue = normalizeWhitespace(value);
+
+  if (!normalizedValue) {
+    return "";
+  }
+
+  const valueNearWnat =
+    normalizedValue.match(/wnat[\s\S]{0,30}?(-?\d{1,2}\s*[.,'’]\s*\d{1,2})\s*%?/i)?.[1] ||
+    normalizedValue.match(/wnat[\s\S]{0,30}?(-?\d)\s+(\d)\s*%?/i)?.slice(1, 3).join(",") ||
+    normalizedValue.match(/wnat[\s\S]{0,30}?(-?\d{2})\s*%?/i)?.[1] ||
+    "";
+
+  if (valueNearWnat) {
+    return normalizeWaterPercentValue(`${valueNearWnat} %`);
+  }
+
+  const decimalMatch = normalizedValue.match(/(-?\d{1,2})\s*[.,'’]\s*(\d{1,2})\s*%/);
+
+  if (decimalMatch) {
+    return normalizeWaterPercentValue(`${decimalMatch[1]},${decimalMatch[2]} %`);
+  }
+
+  const splitDigitMatch = normalizedValue.match(/(-?\d)\s+(\d)\s*%/);
+
+  if (splitDigitMatch) {
+    return normalizeWaterPercentValue(`${splitDigitMatch[1]},${splitDigitMatch[2]} %`);
+  }
+
+  const doubleDigitWholeMatch = normalizedValue.match(/(-?\d{2})\s*%/);
+
+  if (doubleDigitWholeMatch) {
+    return normalizeWaterPercentValue(`${doubleDigitWholeMatch[1]} %`);
+  }
+
+  const singleDigitWholeMatch = normalizedValue.match(/(-?\d)\s*%/);
+
+  if (singleDigitWholeMatch) {
+    return normalizeWaterPercentValue(`${singleDigitWholeMatch[1]},0 %`);
+  }
+
+  const decimalWithoutPercentMatch = normalizedValue.match(/(-?\d{1,2})\s*[.,'’]\s*(\d{1,2})(?=\D*$)/);
+
+  if (decimalWithoutPercentMatch) {
+    return normalizeWaterPercentValue(`${decimalWithoutPercentMatch[1]},${decimalWithoutPercentMatch[2]} %`);
+  }
+
+  const splitDigitWithoutPercentMatch = normalizedValue.match(/(-?\d)\s+(\d)(?=\D*$)/);
+
+  if (splitDigitWithoutPercentMatch) {
+    return normalizeWaterPercentValue(`${splitDigitWithoutPercentMatch[1]},${splitDigitWithoutPercentMatch[2]} %`);
+  }
+
+  const doubleDigitWholeWithoutPercentMatch = normalizedValue.match(/(-?\d{2})(?=\D*$)/);
+
+  if (doubleDigitWholeWithoutPercentMatch) {
+    return normalizeWaterPercentValue(`${doubleDigitWholeWithoutPercentMatch[1]} %`);
+  }
+
+  return "";
+}
+
+function findWaterContentInWaterZones(text: string) {
+  const zones = Array.from(
+    text.matchAll(/\[\[WATER_ZONE\]\]([\s\S]{0,180}?)(?=\[\[PAGE_BREAK\]\]|\[\[WATER_ZONE\]\]|$)/g)
+  )
+    .map((match) => extractPercentFromWaterZoneText(match[1] ?? ""))
+    .filter(Boolean);
+
+  return zones[0] ?? "";
+}
+
 function findWaterContentValue(text: string) {
   if (!text) {
     return "";
+  }
+
+  const waterZoneValue = findWaterContentInWaterZones(text);
+
+  if (waterZoneValue) {
+    return waterZoneValue;
   }
 
   const directMatch =
@@ -529,6 +607,7 @@ function inferSampleTypeFromOcr(ocrText: string, pageCount: number, waterContent
 async function runOcrFallback(buffer: Buffer, pageCount: number) {
   const tempPdfPath = path.join(TEMP_DIR, `${randomUUID()}.pdf`);
   const tempImagePaths: string[] = [];
+  const tempWaterCropPaths: string[] = [];
 
   try {
     await fs.writeFile(tempPdfPath, buffer);
@@ -570,6 +649,47 @@ async function runOcrFallback(buffer: Buffer, pageCount: number) {
           collectedTexts.push(stdout);
         }
       }
+
+      if (pageNumber >= 2) {
+        const tempWaterCropPath = path.join(TEMP_DIR, `${randomUUID()}-page-${pageNumber}-water.png`);
+        tempWaterCropPaths.push(tempWaterCropPath);
+
+        try {
+          await execFileAsync("swift", [
+            "-module-cache-path",
+            "/tmp/swift-module-cache",
+            path.join(process.cwd(), "scripts/crop_image_region.swift"),
+            tempImagePath,
+            "0.18",
+            "0.73",
+            "0.62",
+            "0.17",
+            tempWaterCropPath,
+          ]);
+
+          const waterZoneRuns = await Promise.all(
+            ["6", "11"].map(async (psm) => {
+              const { stdout } = await execFileAsync("/opt/homebrew/bin/tesseract", [
+                tempWaterCropPath,
+                "stdout",
+                "-l",
+                "dan+eng",
+                "--psm",
+                psm,
+              ]);
+              return stdout;
+            })
+          );
+
+          const waterZoneText = normalizeWhitespace(waterZoneRuns.join(" "));
+
+          if (waterZoneText) {
+            collectedTexts.push(`[[WATER_ZONE]] ${waterZoneText}`);
+          }
+        } catch {
+          // Ignore focused crop OCR failures and keep the broader page OCR.
+        }
+      }
     }
 
     return normalizeWhitespace(collectedTexts.join(" "));
@@ -579,6 +699,7 @@ async function runOcrFallback(buffer: Buffer, pageCount: number) {
     await Promise.all([
       fs.unlink(tempPdfPath).catch(() => undefined),
       ...tempImagePaths.map((filePath) => fs.unlink(filePath).catch(() => undefined)),
+      ...tempWaterCropPaths.map((filePath) => fs.unlink(filePath).catch(() => undefined)),
     ]);
   }
 }
