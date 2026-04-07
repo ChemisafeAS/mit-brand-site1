@@ -27,8 +27,25 @@ function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function countMojibakeMarkers(value: string) {
+  return (value.match(/Ã|Â|â€|�/g) ?? []).length;
+}
+
+function decodeLatin1Utf8Mojibake(value: string) {
+  if (!/[ÃÂâ€�]/.test(value)) {
+    return value;
+  }
+
+  try {
+    const repaired = Buffer.from(value, "latin1").toString("utf8").normalize("NFC");
+    return countMojibakeMarkers(repaired) < countMojibakeMarkers(value) ? repaired : value;
+  } catch {
+    return value;
+  }
+}
+
 function normalizeDanishMojibake(value: string) {
-  return value
+  return decodeLatin1Utf8Mojibake(value)
     .replaceAll("ÃƒÂ¦", "\u00e6")
     .replaceAll("ÃƒÂ¸", "\u00f8")
     .replaceAll("ÃƒÂ¥", "\u00e5")

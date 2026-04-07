@@ -32,7 +32,22 @@ function Normalize-Text {
     return ""
   }
 
-  return (($Text -replace "\s+", " ").Trim()) `
+  $normalized = ($Text -replace "\s+", " ").Trim()
+
+  if ($normalized -match "Ã|Â|â€") {
+    try {
+      $latin1 = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
+      $bytes = $latin1.GetBytes($normalized)
+      $decoded = [System.Text.Encoding]::UTF8.GetString($bytes)
+
+      if (($decoded | Select-String -Pattern "Ã|Â|â€" -Quiet) -eq $false) {
+        $normalized = $decoded
+      }
+    } catch {
+    }
+  }
+
+  return ($normalized) `
     -replace "ÃƒÂ¦", "æ" `
     -replace "ÃƒÂ¸", "ø" `
     -replace "ÃƒÂ¥", "å" `
