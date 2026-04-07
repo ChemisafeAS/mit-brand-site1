@@ -93,8 +93,10 @@ function Normalize-RecipientDisplay {
   if ($normalized -match "Aabenraa") { return "Aabenraa Kommune" }
   if ($normalized -match "Viborg") { return "Viborg Kommune" }
   if ($normalized -match "Tønder|TÃ¸nder|TÃƒÂ¸nder") { return "Tønder Kommune" }
+  if ($normalized -match "Billund|Grindsted") { return "Billund Kommune" }
   if ($normalized -match "Favrskov|Hinnerup") { return "Favrskov Kommune" }
   if ($normalized -match "Fredericia") { return "Fredericia Kommune" }
+  if ($normalized -match "Holstebro") { return "Holstebro Kommune" }
   if ($normalized -match "Skanderborg") { return "Vejdirektoratet Skanderborg" }
   if ($normalized -match "Randers") { return "Vejdirektoratet Randers" }
   if ($normalized -match "Lyngby") { return "Vejdirektoratet Lyngby" }

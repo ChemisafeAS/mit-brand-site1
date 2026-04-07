@@ -97,8 +97,10 @@ function normalizeRecipientDisplay(value: string) {
     [/\bAabenraa\b/i, "Aabenraa Kommune"],
     [/\bViborg\b/i, "Viborg Kommune"],
     [/\bTÃƒÂ¸nder\b|\bTÃ¸nder\b|\bTønder\b/i, "Tønder Kommune"],
+    [/\bBillund\b|\bGrindsted\b/i, "Billund Kommune"],
     [/\bFavrskov\b|\bHinnerup\b/i, "Favrskov Kommune"],
     [/\bFredericia\b/i, "Fredericia Kommune"],
+    [/\bHolstebro\b/i, "Holstebro Kommune"],
   ];
 
   for (const [pattern, label] of municipalityPatterns) {

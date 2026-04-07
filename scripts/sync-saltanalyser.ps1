@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$SourceDir = "C:\Users\Frederik\OneDrive - ChemisafeAS\Dokumenter\PowerAutomate\Prøvetagning",
   [string]$ApiBaseUrl = "https://example.com",
   [string]$SyncToken = "",
@@ -9,6 +9,46 @@ param(
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue | Out-Null
+
+function Normalize-Text {
+  param([string]$Text)
+
+  if ([string]::IsNullOrWhiteSpace($Text)) {
+    return ""
+  }
+
+  $normalized = ($Text -replace "\s+", " ").Trim()
+
+  if ($normalized -match "Ã|Â|â€") {
+    try {
+      $latin1 = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
+      $bytes = $latin1.GetBytes($normalized)
+      $decoded = [System.Text.Encoding]::UTF8.GetString($bytes)
+
+      if (($decoded | Select-String -Pattern "Ã|Â|â€" -Quiet) -eq $false) {
+        $normalized = $decoded
+      }
+    }
+    catch {
+    }
+  }
+
+  return ($normalized) `
+    -replace "ÃƒÂ¦", "æ" `
+    -replace "ÃƒÂ¸", "ø" `
+    -replace "ÃƒÂ¥", "å" `
+    -replace "Ãƒâ€ ", "Æ" `
+    -replace "ÃƒËœ", "Ø" `
+    -replace "Ãƒâ€¦", "Å" `
+    -replace "Ã¦", "æ" `
+    -replace "Ã¸", "ø" `
+    -replace "Ã¥", "å" `
+    -replace "Ã†", "Æ" `
+    -replace "Ã˜", "Ø" `
+    -replace "Ã…", "Å" `
+    -replace "Ã‚Â¢", "ø" `
+    -replace "Â¢", "ø"
+}
 
 foreach ($proxyVar in @("ALL_PROXY", "HTTP_PROXY", "HTTPS_PROXY", "GIT_HTTP_PROXY", "GIT_HTTPS_PROXY")) {
   Set-Item -Path "Env:$proxyVar" -Value "" -ErrorAction SilentlyContinue
@@ -152,7 +192,7 @@ function Get-OcrTextFromPdf {
     )
 
     $ocrText = & $TesseractPath $ImagePath stdout -l $TesseractLanguage --psm $Psm 2>$null
-    return [string]$ocrText
+    return Normalize-Text ([string]$ocrText)
   }
 
   function Get-FocusedWaterZoneText {
@@ -188,7 +228,7 @@ function Get-OcrTextFromPdf {
         }
       }
 
-      return ($ocrRuns -join " ").Trim()
+      return Normalize-Text ($ocrRuns -join " ")
     }
     finally {
       $bitmap.Dispose()
@@ -213,7 +253,7 @@ function Get-OcrTextFromPdf {
         }
       }
 
-      $pageText = ($ocrRuns -join " ").Trim()
+      $pageText = Normalize-Text ($ocrRuns -join " ")
 
       if ($image.Name -match "page-(\d+)\.png" -and [int]$matches[1] -ge 2) {
         $waterZoneText = Get-FocusedWaterZoneText -ImagePath $image.FullName
@@ -247,6 +287,7 @@ function Invoke-JsonApi {
 
   $url = $BaseUrl.TrimEnd("/") + "/api/saltanalyser/ingest"
   $json = $Body | ConvertTo-Json -Depth 10
+  $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($json)
   $headers = @{
     Authorization = "Bearer $Token"
   }
@@ -256,8 +297,8 @@ function Invoke-JsonApi {
       -Uri $url `
       -Method $Method `
       -Headers $headers `
-      -ContentType "application/json" `
-      -Body $json `
+      -ContentType "application/json; charset=utf-8" `
+      -Body $bodyBytes `
       -TimeoutSec 900
   }
   catch {
