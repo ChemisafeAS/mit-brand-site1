@@ -96,11 +96,12 @@ function normalizeRecipientDisplay(value: string) {
   const municipalityPatterns: Array<[RegExp, string]> = [
     [/\bAabenraa\b/i, "Aabenraa Kommune"],
     [/\bViborg\b/i, "Viborg Kommune"],
-    [/\bTÃƒÂ¸nder\b|\bTÃ¸nder\b|\bTønder\b/i, "Tønder Kommune"],
+    [/\bTønder\b/i, "Tønder Kommune"],
     [/\bBillund\b|\bGrindsted\b/i, "Billund Kommune"],
     [/\bFavrskov\b|\bHinnerup\b/i, "Favrskov Kommune"],
     [/\bFredericia\b/i, "Fredericia Kommune"],
     [/\bHolstebro\b/i, "Holstebro Kommune"],
+    [/\bKolding\b/i, "Kolding Kommune"],
   ];
 
   for (const [pattern, label] of municipalityPatterns) {
@@ -113,7 +114,7 @@ function normalizeRecipientDisplay(value: string) {
     [/\bSkanderborg\b/i, "Vejdirektoratet Skanderborg"],
     [/\bRanders\b/i, "Vejdirektoratet Randers"],
     [/\bLyngby\b/i, "Vejdirektoratet Lyngby"],
-    [/\bHillerÃƒÂ¸d\b|\bHillerÃ¸d\b|\bHillerød\b/i, "Vejdirektoratet Hillerød"],
+    [/\bHillerød\b/i, "Vejdirektoratet Hillerød"],
   ];
 
   for (const [pattern, label] of vejdirektoratetCities) {
@@ -400,6 +401,8 @@ function findWaterContentValue(text: string) {
   const directMatch =
     text.match(/vandindhold\s+in\s+situ(?:\s+wnat)?[\s\S]{0,120}?(-?\d{1,2}(?:[.,'’]\d{1,2})?\s*%)/i)?.[1] ||
     text.match(/wnat[\s\S]{0,80}?(-?\d{1,2}(?:[.,'’]\d{1,2})?\s*%)/i)?.[1] ||
+    text.match(/(-?\d{1,2}(?:[.,'’]\d{1,2})?\s*%)\s*\|?\s*vandindhold\b/i)?.[1] ||
+    text.match(/(-?\d{1,2}(?:[.,'’]\d{1,2})?\s*%)\s*\|?\s*wnat\b/i)?.[1] ||
     findPercentNearLabels(text, ["vandindhold in situ"]) ||
     findPercentNearLabelsLoose(text, ["vandindhold in situ"]) ||
     findPercentNearLabels(text, ["wnat"]) ||
@@ -553,13 +556,21 @@ function findReportNumber(text: string) {
 
 function extractDescriptionSampleType(text: string) {
   const normalizedText = normalizeWhitespace(text);
+  const hasWaterContentMethod =
+    /ds\/en\s*1097-5/i.test(normalizedText) || /vandindhold\s*\(2013\)/i.test(normalizedText);
+  const hasGradingMethod =
+    /ds\/en\s*1235/i.test(normalizedText) || /kornstørrelsesfordeling/i.test(normalizedText);
 
   // Side 1/metodereferencen er mere pålidelig end generiske felter fra skemaer på side 2/3.
-  if (/ds\/en\s*1235/i.test(normalizedText) || /kornstørrelsesfordeling/i.test(normalizedText)) {
+  if (hasWaterContentMethod && hasGradingMethod) {
+    return "Kornstørrelsesfordeling + Vandindhold";
+  }
+
+  if (hasGradingMethod) {
     return "Kornstørrelsesfordeling";
   }
 
-  if (/ds\/en\s*1097-5/i.test(normalizedText) || /vandindhold\s*\(2013\)/i.test(normalizedText)) {
+  if (hasWaterContentMethod) {
     return "Vandindhold";
   }
 
@@ -821,7 +832,7 @@ export async function parseSaltAnalysisPdf(
       fileFallback.recipient
   );
   let reportNumber = findReportNumber(sourceText) || fileFallback.reportNumber;
-  let deliveryNoteNumber = findFiveDigitDeliveryNote(sourceText) || fileFallback.deliveryNoteNumber;
+  let deliveryNoteNumber = fileFallback.deliveryNoteNumber;
   const batchNumber = findReference(sourceText, ["batch nr", "batch", "lot nr", "lot"]);
   let sampleDate =
     findDateNearLabels(sourceText, ["prøvestart", "start"]) ||
@@ -867,10 +878,6 @@ export async function parseSaltAnalysisPdf(
       reportNumber = findReportNumber(ocrText) || reportNumber;
     }
 
-    if (!deliveryNoteNumber) {
-      deliveryNoteNumber = findFiveDigitDeliveryNote(ocrText) || deliveryNoteNumber;
-    }
-
     if (!sampleDate) {
       sampleDate =
         findDateNearLabels(fallbackOcrPageOne, ["prøvestart", "start"]) ||
@@ -894,7 +901,7 @@ export async function parseSaltAnalysisPdf(
   }
 
   if (sampleType && waterContent && !sampleType.includes("Vandindhold")) {
-    sampleType = `Vandindhold + ${sampleType}`;
+    sampleType = `${sampleType} + Vandindhold`;
   }
 
   if (sampleType && /^[,.-]/.test(sampleType)) {

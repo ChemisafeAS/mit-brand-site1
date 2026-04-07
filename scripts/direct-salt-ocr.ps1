@@ -92,15 +92,16 @@ function Normalize-RecipientDisplay {
 
   if ($normalized -match "Aabenraa") { return "Aabenraa Kommune" }
   if ($normalized -match "Viborg") { return "Viborg Kommune" }
-  if ($normalized -match "Tønder|TÃ¸nder|TÃƒÂ¸nder") { return "Tønder Kommune" }
+  if ($normalized -match "Tønder") { return "Tønder Kommune" }
   if ($normalized -match "Billund|Grindsted") { return "Billund Kommune" }
   if ($normalized -match "Favrskov|Hinnerup") { return "Favrskov Kommune" }
   if ($normalized -match "Fredericia") { return "Fredericia Kommune" }
   if ($normalized -match "Holstebro") { return "Holstebro Kommune" }
+  if ($normalized -match "Kolding") { return "Kolding Kommune" }
   if ($normalized -match "Skanderborg") { return "Vejdirektoratet Skanderborg" }
   if ($normalized -match "Randers") { return "Vejdirektoratet Randers" }
   if ($normalized -match "Lyngby") { return "Vejdirektoratet Lyngby" }
-  if ($normalized -match "Hillerød|HillerÃ¸d|HillerÃƒÂ¸d") { return "Vejdirektoratet Hillerød" }
+  if ($normalized -match "Hillerød") { return "Vejdirektoratet Hillerød" }
 
   return $normalized
 }
@@ -250,14 +251,32 @@ function Extract-SampleDate {
     [string]$PageOneText
   )
 
+  $monthMap = @{
+    januar = "01"
+    februar = "02"
+    marts = "03"
+    april = "04"
+    maj = "05"
+    juni = "06"
+    juli = "07"
+    august = "08"
+    september = "09"
+    oktober = "10"
+    november = "11"
+    december = "12"
+  }
+
   $match = [regex]::Match(
     $PageOneText,
-    "Start\s+(\d{1,2})[.,]?\s*marts\s+(\d{4})",
+    "Start\s+(\d{1,2})[.,]?\s*([A-Za-zÆØÅæøå]+)\s+(\d{4})",
     "IgnoreCase"
   )
 
   if ($match.Success) {
-    return ("{0:00}.03.{1}" -f [int]$match.Groups[1].Value, $match.Groups[2].Value)
+    $monthName = $match.Groups[2].Value.ToLowerInvariant()
+    if ($monthMap.ContainsKey($monthName)) {
+      return ("{0:00}.{1}.{2}" -f [int]$match.Groups[1].Value, $monthMap[$monthName], $match.Groups[3].Value)
+    }
   }
 
   return (Get-NameParts -FileName $FileName).sampleDate
@@ -266,11 +285,18 @@ function Extract-SampleDate {
 function Extract-SampleType {
   param([string]$PageOneText)
 
-  if ($PageOneText -match "1235" -or $PageOneText -match "Kornst") {
+  $hasGrading = $PageOneText -match "1235" -or $PageOneText -match "Kornst"
+  $hasWater = $PageOneText -match "1097-5" -or $PageOneText -match "Vandindhold \(2013\)"
+
+  if ($hasGrading -and $hasWater) {
+    return "Kornstørrelsesfordeling + Vandindhold"
+  }
+
+  if ($hasGrading) {
     return "Kornstørrelsesfordeling"
   }
 
-  if ($PageOneText -match "1097-5" -or $PageOneText -match "Vandindhold \(2013\)") {
+  if ($hasWater) {
     return "Vandindhold"
   }
 
@@ -282,11 +308,6 @@ function Extract-DeliveryNote {
     [string]$FileName,
     [string]$AllText
   )
-
-  $match = [regex]::Match($AllText, "Mrk\.?\s*[:.]?\s*(\d{5})", "IgnoreCase")
-  if ($match.Success) {
-    return $match.Groups[1].Value
-  }
 
   return (Get-NameParts -FileName $FileName).deliveryNote
 }
@@ -306,6 +327,22 @@ function Extract-WaterContent {
     $match = [regex]::Match(
       $text,
       "Wnat[\s\S]{0,80}?(\d{1,2}(?:[.,]\d{1,2})?\s*%)",
+      "IgnoreCase"
+    )
+  }
+
+  if (-not $match.Success) {
+    $match = [regex]::Match(
+      $text,
+      "(\d{1,2}(?:[.,]\d{1,2})?\s*%)\s*\|?\s*VANDINDHOLD",
+      "IgnoreCase"
+    )
+  }
+
+  if (-not $match.Success) {
+    $match = [regex]::Match(
+      $text,
+      "(\d{1,2}(?:[.,]\d{1,2})?\s*%)\s*\|?\s*Wnat",
       "IgnoreCase"
     )
   }
@@ -345,6 +382,15 @@ $rows = foreach ($filePath in $Files) {
   $ocr = Get-OcrData -PdfPath $file.FullName -PdfToPpmPath $PdfToPpmPath -TesseractPath $TesseractPath
   $pageOneText = if ($ocr.pages.Count -ge 1) { $ocr.pages[0] } else { "" }
   $sampleType = Extract-SampleType -PageOneText $pageOneText
+  $waterContent = Extract-WaterContent -AllText $ocr.all
+
+  if ($waterContent -and -not [string]::IsNullOrWhiteSpace($sampleType) -and $sampleType -notmatch "Vandindhold") {
+    $sampleType = "$sampleType + Vandindhold"
+  }
+
+  if (-not $sampleType -and $waterContent) {
+    $sampleType = "Vandindhold"
+  }
 
   [pscustomobject]@{
     file = $file.Name
@@ -352,7 +398,7 @@ $rows = foreach ($filePath in $Files) {
     sample_date = Extract-SampleDate -FileName $file.Name -PageOneText $pageOneText
     sample_type = $sampleType
     delivery_note = Extract-DeliveryNote -FileName $file.Name -AllText $ocr.all
-    water_content = if ($sampleType -eq "Vandindhold") { Extract-WaterContent -AllText $ocr.all } else { "" }
+    water_content = $waterContent
   }
 }
 
