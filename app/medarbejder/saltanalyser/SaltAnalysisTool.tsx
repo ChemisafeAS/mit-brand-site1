@@ -120,78 +120,6 @@ function Summary({ rows }: { rows: SaltAnalysisRow[] }) {
   );
 }
 
-function getReviewReasons(row: SaltAnalysisRow) {
-  const reasons: string[] = [];
-
-  if (!row.recipient.trim()) {
-    reasons.push("Modtager mangler");
-  }
-
-  if (!row.sampleType.trim()) {
-    reasons.push("Prøvetype mangler");
-  }
-
-  if (!row.waterContent.trim()) {
-    reasons.push("Vandindhold mangler");
-  }
-
-  if (!row.sampleDate.trim()) {
-    reasons.push("Analysedato mangler");
-  }
-
-  if (!reasons.length && row.status !== "klar") {
-    reasons.push("Kræver manuelt tjek");
-  }
-
-  return reasons;
-}
-
-function ReviewQueue({ rows }: { rows: SaltAnalysisRow[] }) {
-  const reviewRows = useMemo(
-    () =>
-      rows
-        .map((row) => ({ row, reasons: getReviewReasons(row) }))
-        .filter(({ row, reasons }) => row.status !== "klar" || reasons.length > 0)
-        .slice(0, 12),
-    [rows]
-  );
-
-  if (!reviewRows.length) {
-    return null;
-  }
-
-  return (
-    <section className={styles.card}>
-      <div className={styles.sectionHeader}>
-        <div>
-          <h3 className={styles.titleSmall}>Skal tjekkes</h3>
-          <p className={styles.helperText}>
-            De her analyser mangler stadig felter eller bør gennemgås manuelt.
-          </p>
-        </div>
-      </div>
-
-      <div className={styles.reviewList}>
-        {reviewRows.map(({ row, reasons }) => (
-          <article key={row.id ?? row.fileName} className={styles.reviewCard}>
-            <div className={styles.reviewHeader}>
-              <strong>{row.reportNumber || row.fileName}</strong>
-              <span>{row.recipient || "Ukendt modtager"}</span>
-            </div>
-            <div className={styles.reviewReasons}>
-              {reasons.map((reason) => (
-                <span key={reason} className={styles.reviewTag}>
-                  {reason}
-                </span>
-              ))}
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function ResultsTable({
   initialRows,
   monthFilter,
@@ -820,8 +748,6 @@ export default function SaltAnalysisTool({
       </section>
 
       <Summary rows={rows} />
-      <ReviewQueue rows={rows} />
-
       {rows.length ? (
         <ResultsTable
           key={rowsSignature}
