@@ -93,14 +93,15 @@ function Summary({ rows }: { rows: SaltAnalysisRow[] }) {
 
   const readyCount = rows.filter((row) => row.status === "klar").length;
   const reviewCount = rows.length - readyCount;
-  const averageFields = Math.round(
-    rows.reduce((sum, row) => sum + row.parsedFieldCount, 0) / rows.length
-  );
+  const missingWaterCount = rows.filter((row) => !row.waterContent.trim()).length;
+  const missingKeyFieldsCount = rows.filter(
+    (row) => !row.recipient.trim() || !row.sampleType.trim() || !row.sampleDate.trim()
+  ).length;
 
   return (
     <section className={styles.summaryGrid}>
       <article className={styles.summaryCard}>
-        <span className={styles.summaryLabel}>PDF&apos;er læst</span>
+        <span className={styles.summaryLabel}>Analyser i oversigten</span>
         <strong className={styles.summaryValue}>{rows.length}</strong>
       </article>
       <article className={styles.summaryCard}>
@@ -108,19 +109,90 @@ function Summary({ rows }: { rows: SaltAnalysisRow[] }) {
         <strong className={styles.summaryValue}>{readyCount}</strong>
       </article>
       <article className={styles.summaryCard}>
-        <span className={styles.summaryLabel}>Kræver tjek</span>
-        <strong className={styles.summaryValue}>{reviewCount}</strong>
+        <span className={styles.summaryLabel}>Mangler vandindhold</span>
+        <strong className={styles.summaryValue}>{missingWaterCount}</strong>
       </article>
       <article className={styles.summaryCard}>
-        <span className={styles.summaryLabel}>Felter læst i snit</span>
-        <strong className={styles.summaryValue}>{averageFields}</strong>
+        <span className={styles.summaryLabel}>Kræver tjek</span>
+        <strong className={styles.summaryValue}>{Math.max(reviewCount, missingKeyFieldsCount)}</strong>
       </article>
     </section>
   );
 }
 
+function getReviewReasons(row: SaltAnalysisRow) {
+  const reasons: string[] = [];
+
+  if (!row.recipient.trim()) {
+    reasons.push("Modtager mangler");
+  }
+
+  if (!row.sampleType.trim()) {
+    reasons.push("Prøvetype mangler");
+  }
+
+  if (!row.waterContent.trim()) {
+    reasons.push("Vandindhold mangler");
+  }
+
+  if (!row.sampleDate.trim()) {
+    reasons.push("Analysedato mangler");
+  }
+
+  if (!reasons.length && row.status !== "klar") {
+    reasons.push("Kræver manuelt tjek");
+  }
+
+  return reasons;
+}
+
+function ReviewQueue({ rows }: { rows: SaltAnalysisRow[] }) {
+  const reviewRows = useMemo(
+    () =>
+      rows
+        .map((row) => ({ row, reasons: getReviewReasons(row) }))
+        .filter(({ row, reasons }) => row.status !== "klar" || reasons.length > 0)
+        .slice(0, 12),
+    [rows]
+  );
+
+  if (!reviewRows.length) {
+    return null;
+  }
+
+  return (
+    <section className={styles.card}>
+      <div className={styles.sectionHeader}>
+        <div>
+          <h3 className={styles.titleSmall}>Skal tjekkes</h3>
+          <p className={styles.helperText}>
+            De her analyser mangler stadig felter eller bør gennemgås manuelt.
+          </p>
+        </div>
+      </div>
+
+      <div className={styles.reviewList}>
+        {reviewRows.map(({ row, reasons }) => (
+          <article key={row.id ?? row.fileName} className={styles.reviewCard}>
+            <div className={styles.reviewHeader}>
+              <strong>{row.reportNumber || row.fileName}</strong>
+              <span>{row.recipient || "Ukendt modtager"}</span>
+            </div>
+            <div className={styles.reviewReasons}>
+              {reasons.map((reason) => (
+                <span key={reason} className={styles.reviewTag}>
+                  {reason}
+                </span>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ResultsTable({
-  fileLinks,
   initialRows,
   monthFilter,
   onRowsChange,
@@ -136,7 +208,6 @@ function ResultsTable({
   setYearFilter,
   yearFilter,
 }: {
-  fileLinks: Map<string, string>;
   initialRows: SaltAnalysisRow[];
   monthFilter: string;
   onRowsChange: (rows: SaltAnalysisRow[]) => void;
@@ -390,7 +461,7 @@ function ResultsTable({
               );
               const rowId = row.id ?? row.fileName;
               const isEditing = editingRowId === rowId;
-              const fileUrl = row.fileUrl || fileLinks.get(row.fileName);
+              const fileUrl = row.fileUrl;
 
               return (
                 <tr key={rowId}>
@@ -657,8 +728,8 @@ export default function SaltAnalysisTool({
       <section className={styles.card}>
         <div className={styles.sectionHeader}>
           <div>
-            <p className={styles.eyebrow}>Saltanalyser</p>
-            <h2 className={styles.title}>Upload analyse-PDF&apos;er</h2>
+            <p className={styles.eyebrow}>Automatisk drift</p>
+            <h2 className={styles.title}>Synkronisering og kontrol</h2>
           </div>
         </div>
 
@@ -668,6 +739,39 @@ export default function SaltAnalysisTool({
           vandindhold og analysedato. Uploadede analyser gemmes nu i Supabase,
           så oversigten bevares mellem besøg.
         </p>
+
+        <div className={styles.operationsLayout}>
+          <div className={styles.operationsIntro}>
+            <p className={styles.helperText}>
+              Saltanalyser bliver nu synkroniseret automatisk fra OneDrive via
+              Windows Opgavestyring. Siden bruges derfor som driftsoversigt, hvor du
+              kan følge dagens sync og se hvilke analyser der stadig skal tjekkes.
+            </p>
+            <ul className={styles.operationsList}>
+              <li>Nye PDF&apos;er læses automatisk og gemmes i Supabase.</li>
+              <li>Manuel sync er kun til ekstra kontrol eller hvis du vil tvinge en frisk kørsel.</li>
+              <li>Genlæsning bruges når parseren er forbedret og gamle rækker skal opdateres.</li>
+            </ul>
+          </div>
+          <div className={styles.operationsActions}>
+            <button
+              className={styles.secondaryButton}
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => void handleSyncFromFolder()}
+            >
+              Synkronisér nu
+            </button>
+            <button
+              className={styles.primaryButton}
+              type="button"
+              disabled={isSubmitting || !rows.length}
+              onClick={() => void handleReparseStoredAnalyses()}
+            >
+              Genlæs problematiske analyser
+            </button>
+          </div>
+        </div>
 
         <form className={styles.form} onSubmit={handleSubmit}>
           <label className={styles.field}>
@@ -716,12 +820,12 @@ export default function SaltAnalysisTool({
       </section>
 
       <Summary rows={rows} />
+      <ReviewQueue rows={rows} />
 
       {rows.length ? (
         <ResultsTable
           key={rowsSignature}
           initialRows={rows}
-          fileLinks={fileLinks}
           monthFilter={monthFilter}
           onRowsChange={handleRowsChange}
           recipientFilter={recipientFilter}
