@@ -86,6 +86,16 @@ function getRecipientFilterOptions(rows: SaltAnalysisRow[]) {
   );
 }
 
+function expectsWaterContent(sampleType: string) {
+  const normalized = sampleType.trim().toLocaleLowerCase("da-DK");
+
+  if (!normalized) {
+    return true;
+  }
+
+  return normalized !== "kornstørrelsesfordeling";
+}
+
 function Summary({ rows }: { rows: SaltAnalysisRow[] }) {
   if (!rows.length) {
     return null;
@@ -93,7 +103,9 @@ function Summary({ rows }: { rows: SaltAnalysisRow[] }) {
 
   const readyCount = rows.filter((row) => row.status === "klar").length;
   const reviewCount = rows.length - readyCount;
-  const missingWaterCount = rows.filter((row) => !row.waterContent.trim()).length;
+  const missingWaterCount = rows.filter(
+    (row) => expectsWaterContent(row.sampleType) && !row.waterContent.trim()
+  ).length;
   const missingKeyFieldsCount = rows.filter(
     (row) => !row.recipient.trim() || !row.sampleType.trim() || !row.sampleDate.trim()
   ).length;
