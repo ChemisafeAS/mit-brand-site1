@@ -101,8 +101,7 @@ function Summary({ rows }: { rows: SaltAnalysisRow[] }) {
     return null;
   }
 
-  const readyCount = rows.filter((row) => row.status === "klar").length;
-  const reviewCount = rows.length - readyCount;
+  const reviewCount = rows.filter((row) => row.status !== "klar").length;
   const missingWaterCount = rows.filter(
     (row) => expectsWaterContent(row.sampleType) && !row.waterContent.trim()
   ).length;
@@ -115,10 +114,6 @@ function Summary({ rows }: { rows: SaltAnalysisRow[] }) {
       <article className={styles.summaryCard}>
         <span className={styles.summaryLabel}>Analyser i oversigten</span>
         <strong className={styles.summaryValue}>{rows.length}</strong>
-      </article>
-      <article className={styles.summaryCard}>
-        <span className={styles.summaryLabel}>Klar direkte</span>
-        <strong className={styles.summaryValue}>{readyCount}</strong>
       </article>
       <article className={styles.summaryCard}>
         <span className={styles.summaryLabel}>Mangler vandindhold</span>
