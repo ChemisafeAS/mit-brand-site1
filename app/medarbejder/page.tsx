@@ -41,7 +41,7 @@ export default async function MedarbejderPage({
         <div className={styles.heroText}>
           <p className={styles.eyebrow}>Medarbejder område</p>
           <h1 className={styles.title}>
-            Velkommen, {formatEmployeeName(user.email)}
+            Velkommen{formatEmployeeName(user.user_metadata) ? `, ${formatEmployeeName(user.user_metadata)}` : ""}
           </h1>
           <p className={styles.lead}>
             Her kan I nu styre kategorier og produkter direkte fra hjemmesiden
