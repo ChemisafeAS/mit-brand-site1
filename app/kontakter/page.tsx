@@ -76,7 +76,7 @@ export default async function KontakterPage({
           <h1 className={styles.heroTitle}>Kontakter</h1>
           <p className={styles.heroText}>
             Saml leverandører, kunder, transportører og andre vigtige relationer
-            ét sted. Logget ind som {formatEmployeeName(user.email)}.
+            ét sted. Logget ind som {formatEmployeeName(user.user_metadata) ?? user.email}.
           </p>
         </div>
         <Link className={styles.linkButton} href="/medarbejder">

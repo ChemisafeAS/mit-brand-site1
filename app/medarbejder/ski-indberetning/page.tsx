@@ -34,7 +34,7 @@ export default async function SkiIndberetningPage() {
             Tilbage til medarbejdersiden
           </Link>
         </div>
-        <div className={styles.heroBadge}>Logget ind som {formatEmployeeName(user.email)}</div>
+        <div className={styles.heroBadge}>Logget ind som {formatEmployeeName(user.user_metadata) ?? user.email}</div>
       </section>
 
       <SkiReportTool />
