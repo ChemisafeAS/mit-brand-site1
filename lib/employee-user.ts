@@ -3,22 +3,14 @@ import "server-only";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 
-export function formatEmployeeName(email?: string | null) {
-  if (!email) {
-    return "medarbejder";
+export function formatEmployeeName(
+  userMetadata?: Record<string, unknown> | null,
+) {
+  if (typeof userMetadata?.display_name === "string" && userMetadata.display_name.trim()) {
+    return userMetadata.display_name.trim();
   }
 
-  const localPart = email.split("@")[0] ?? "";
-
-  if (!localPart) {
-    return "medarbejder";
-  }
-
-  return localPart
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+  return null;
 }
 
 export async function getEmployeeUser() {
