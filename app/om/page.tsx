@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import Image from "next/image";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/om" },
+};
 import styles from "./om.module.css";
 import EditableField from "@/components/EditableField";
 import PageEditBar from "@/components/PageEditBar";

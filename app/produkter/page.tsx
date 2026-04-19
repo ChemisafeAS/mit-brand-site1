@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { getEmployeeUser } from "@/lib/employee-user";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/produkter" },
+};
 import CatalogClient from "./CatalogClient";
 import { getCatalogData } from "@/lib/catalog";
 

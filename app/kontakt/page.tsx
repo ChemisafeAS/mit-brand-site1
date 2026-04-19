@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import EditableField from "@/components/EditableField";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/kontakt" },
+};
 import PageEditBar from "@/components/PageEditBar";
 import { getEmployeeUser } from "@/lib/employee-user";
 import { getPageContent } from "@/lib/site-content";

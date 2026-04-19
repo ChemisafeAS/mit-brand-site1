@@ -1,5 +1,10 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 import EditableField from "@/components/EditableField";
 import PageEditBar from "@/components/PageEditBar";
 import { getEmployeeUser } from "@/lib/employee-user";
