@@ -138,8 +138,6 @@ function ResultsTable({
   setMonthFilter,
   setRecipientFilter,
   setSearchFilter,
-  setShowOnlyVejdirektoratet,
-  showOnlyVejdirektoratet,
   setYearFilter,
   yearFilter,
 }: {
@@ -153,8 +151,6 @@ function ResultsTable({
   setMonthFilter: (value: string) => void;
   setRecipientFilter: (value: string) => void;
   setSearchFilter: (value: string) => void;
-  setShowOnlyVejdirektoratet: (value: boolean | ((current: boolean) => boolean)) => void;
-  showOnlyVejdirektoratet: boolean;
   setYearFilter: (value: string) => void;
   yearFilter: string;
 }) {
@@ -210,8 +206,6 @@ function ResultsTable({
       const matchesRecipient =
         recipientFilter === "alle" ||
         normalizeRecipientFilterValue(row.recipient) === recipientFilter;
-      const matchesVejdirektoratet =
-        !showOnlyVejdirektoratet || row.recipient.toLowerCase().includes("vejdirektoratet");
       const searchHaystack = normalizeSearchValue(
         [
           row.fileName,
@@ -230,11 +224,10 @@ function ResultsTable({
         matchesMonth &&
         matchesYear &&
         matchesRecipient &&
-        matchesVejdirektoratet &&
         matchesSearch
       );
     });
-  }, [editableRows, monthFilter, recipientFilter, searchFilter, showOnlyVejdirektoratet, yearFilter]);
+  }, [editableRows, monthFilter, recipientFilter, searchFilter, yearFilter]);
 
   function updateRow(index: number, field: keyof SaltAnalysisRow, value: string) {
     setEditableRows((currentRows) =>
@@ -299,15 +292,6 @@ function ResultsTable({
             Første version læser de vigtigste felter ud automatisk. Brug
             redigering, hvis en PDF skal finjusteres manuelt.
           </p>
-          <div className={styles.resultsQuickFilters}>
-            <button
-              type="button"
-              className={showOnlyVejdirektoratet ? styles.filterChipActive : styles.filterChip}
-              onClick={() => setShowOnlyVejdirektoratet((current) => !current)}
-            >
-              Vejdirektoratet
-            </button>
-          </div>
         </div>
         <div className={styles.resultsActions}>
           <label className={`${styles.filterField} ${styles.searchField}`}>
@@ -523,7 +507,6 @@ export default function SaltAnalysisTool({
   const [monthFilter, setMonthFilter] = useState("alle");
   const [recipientFilter, setRecipientFilter] = useState("alle");
   const [searchFilter, setSearchFilter] = useState("");
-  const [showOnlyVejdirektoratet, setShowOnlyVejdirektoratet] = useState(false);
   const [yearFilter, setYearFilter] = useState("alle");
   const state: SaltAnalysisState = {
     ...initialSaltAnalysisState,
@@ -768,8 +751,6 @@ export default function SaltAnalysisTool({
           setMonthFilter={setMonthFilter}
           setRecipientFilter={setRecipientFilter}
           setSearchFilter={setSearchFilter}
-          setShowOnlyVejdirektoratet={setShowOnlyVejdirektoratet}
-          showOnlyVejdirektoratet={showOnlyVejdirektoratet}
           setYearFilter={setYearFilter}
           yearFilter={yearFilter}
         />
